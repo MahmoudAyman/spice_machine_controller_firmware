@@ -69,3 +69,64 @@ String ColorDetector::identify(const Spice* spices, int numSpices, int matchThre
     if (smallestDifference > matchThreshold || smallestDifference == -1) return "Unknown";
     else return closestSpiceName;
 }
+
+// --- Async Interface ---
+
+void ColorDetector::startIdentification(const Spice* spices, int numSpices, int matchThreshold) {
+    _targetSpices = spices;
+    _targetNumSpices = numSpices;
+    _targetThreshold = matchThreshold;
+    _sampleCount = 0;
+    _accR = _accG = _accB = 0;
+    _state = COLOR_SAMPLING_RED;
+    _lastSampleTime = millis();
+    _result = "Unknown";
+}
+
+void ColorDetector::tick() {
+    unsigned long now = millis();
+    if (_state == COLOR_IDLE || _state == COLOR_COMPLETE) return;
+    
+    if (now - _lastSampleTime < 20) return; // Wait 20ms between steps
+
+    switch (_state) {
+        case COLOR_SAMPLING_RED:
+            _accR += readRawColor('r');
+            _state = COLOR_SAMPLING_GREEN;
+            break;
+        case COLOR_SAMPLING_GREEN:
+            _accG += readRawColor('g');
+            _state = COLOR_SAMPLING_BLUE;
+            break;
+        case COLOR_SAMPLING_BLUE:
+            _accB += readRawColor('b');
+            _sampleCount++;
+            if (_sampleCount >= 5) {
+                // Calculate Average
+                int r = _accR / 5;
+                int g = _accG / 5;
+                int b = _accB / 5;
+
+                long smallestDifference = -1;
+                _result = "Unknown";
+
+                for (int i = 0; i < _targetNumSpices; i++) {
+                    long difference = abs(_targetSpices[i].r_val - r) + 
+                                      abs(_targetSpices[i].g_val - g) + 
+                                      abs(_targetSpices[i].b_val - b);
+                    if (smallestDifference == -1 || difference < smallestDifference) {
+                        smallestDifference = difference;
+                        _result = _targetSpices[i].name;
+                    }
+                }
+                
+                if (smallestDifference > _targetThreshold || smallestDifference == -1) _result = "Unknown";
+                _state = COLOR_COMPLETE;
+            } else {
+                _state = COLOR_SAMPLING_RED;
+            }
+            break;
+        default: break;
+    }
+    _lastSampleTime = now;
+}

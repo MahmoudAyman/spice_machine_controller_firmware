@@ -9,7 +9,10 @@
 
 void initHardware();
 void updateLcd(String line1, String line2);
-String identifySpice();
+String identifySpice(); // Blocking version
+void startIdentifySpice(); // Async version
+bool isIdentifying();
+String getIdentifiedSpice();
 
 // --- Non-blocking Dispenser ---
 enum DispenserState {
