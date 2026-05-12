@@ -25,10 +25,10 @@ void BLEManager::begin(const char* deviceName) {
     );
     _pStatusChar->addDescriptor(new BLE2902());
 
-    // Sync Characteristic (Read/Write)
+    // Sync Characteristic (Read/Write/Notify)
     _pSyncChar = pService->createCharacteristic(
         SYNC_CHAR_UUID,
-        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY
     );
     _pSyncChar->addDescriptor(new BLE2902());
 
@@ -203,7 +203,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
 
 void BLEManager::notifyStatus(JsonDocument& doc) {
     if (_deviceConnected) {
-        char buffer[256];
+        char buffer[1024];
         serializeJson(doc, buffer);
         _pStatusChar->setValue(buffer);
         _pStatusChar->notify();
@@ -212,9 +212,10 @@ void BLEManager::notifyStatus(JsonDocument& doc) {
 
 void BLEManager::notifyLevels(JsonDocument& doc) {
     if (_deviceConnected) {
-        char buffer[256];
+        char buffer[1024];
         serializeJson(doc, buffer);
         _pSyncChar->setValue(buffer);
+        _pSyncChar->notify();
     }
 }
 
