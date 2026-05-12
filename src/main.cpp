@@ -1,8 +1,5 @@
 /*
   Spice Mixer - Production V2.4 (Modular Firmware)
-  
-  See README.md for installation instructions.
-  See Configuration.h for pin definitions.
 */
 
 #include "Configuration.h"
@@ -14,13 +11,13 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 Servo dispenserServo;
+ColorDetector colorDetector(CS_S0, CS_S1, CS_S2, CS_S3, CS_OUT);
+
 char keys[ROWS][COLS] = {
   {'F', 'S', '#', '*'}, {'1', '2', '3', 'U'}, {'4', '5', '6', 'D'},
   {'7', '8', '9', 'E'}, {'L', '0', 'R', 'N'}
 };
 Keypad customKeypad = Keypad(makeKeymap(keys), (byte*)rowPins, (byte*)colPins, ROWS, COLS);
-
-
 
 // --- Logic Variables ---
 SystemState currentState = STATE_MAIN_MENU;

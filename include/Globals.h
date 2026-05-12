@@ -8,6 +8,7 @@
 #include <Keypad.h>
 #include "Configuration.h"
 #include "Database.h"
+#include "../lib/ColorDetector/ColorDetector.h"
 
 // --- State Machine Enum ---
 enum SystemState {
@@ -31,6 +32,7 @@ extern Adafruit_SSD1306 display;
 extern AccelStepper stepper;
 extern Servo dispenserServo;
 extern Keypad customKeypad;
+extern ColorDetector colorDetector;
 
 // Expose Logic Variables
 extern int currentTubeIndex;

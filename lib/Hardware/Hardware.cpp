@@ -21,10 +21,7 @@ void initHardware() {
   stepper.setEnablePin(ENABLE_PIN); stepper.setPinsInverted(true, false, true);
 
   // Sensors
-  pinMode(CS_S0, OUTPUT); pinMode(CS_S1, OUTPUT);
-  pinMode(CS_S2, OUTPUT); pinMode(CS_S3, OUTPUT);
-  pinMode(CS_OUT, INPUT);
-  digitalWrite(CS_S0, HIGH); digitalWrite(CS_S1, LOW);
+  colorDetector.begin();
   pinMode(LASER_RX_PIN, INPUT);
 
   // Servo
@@ -46,41 +43,8 @@ void updateLcd(String line1, String line2) {
   display.display();
 }
 
-// --- Color Sensor Logic ---
-int readColor(char color) {
-  switch (color) {
-    case 'r': digitalWrite(CS_S2, LOW); digitalWrite(CS_S3, LOW); break;
-    case 'g': digitalWrite(CS_S2, HIGH); digitalWrite(CS_S3, HIGH); break;
-    case 'b': digitalWrite(CS_S2, LOW); digitalWrite(CS_S3, HIGH); break;
-  }
-  return pulseIn(CS_OUT, LOW, 1000000);
-}
-
 String identifySpice() {
-  long totalR = 0, totalG = 0, totalB = 0;
-  for (int i=0; i<5; i++) {
-    totalR += readColor('r'); delay(20);
-    totalG += readColor('g'); delay(20);
-    totalB += readColor('b'); delay(20);
-  }
-  int r = totalR / 5; int g = totalG / 5; int b = totalB / 5;
-  Serial.printf("Read Avg RGB: %d, %d, %d\n", r, g, b);
-
-  long smallestDifference = -1;
-  String closestSpiceName = "Unknown";
-
-  for (int i = 0; i < NUM_SPICES; i++) {
-    long difference = abs(spices[i].r_val - r) + 
-                      abs(spices[i].g_val - g) + 
-                      abs(spices[i].b_val - b);
-    if (smallestDifference == -1 || difference < smallestDifference) {
-      smallestDifference = difference;
-      closestSpiceName = spices[i].name;
-    }
-  }
-  
-  if (smallestDifference > MATCH_THRESHOLD) return "Unknown";
-  else return closestSpiceName;
+  return colorDetector.identify(spices, NUM_SPICES, MATCH_THRESHOLD);
 }
 
 // --- Dispensing Logic ---
@@ -93,7 +57,6 @@ void dispenseSpice(int totalCycles) {
     for (int pos = 360; pos >= 0; pos -= 10) { dispenserServo.write(pos); }
     
     // --- Vibrator Activation ---
-    // Activates briefly after every servo cycle to dislodge stuck spice
     digitalWrite(VIBRATOR_PIN, HIGH);
     delay(150); // Vibrate for 150ms
     digitalWrite(VIBRATOR_PIN, LOW);
