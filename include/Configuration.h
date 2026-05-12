@@ -47,4 +47,12 @@ const long MATCH_THRESHOLD = 150;
 const float GRAMS_PER_CYCLE = 0.2;
 const int CYCLES_PER_THEELEPEL = 10; // 1 Tlp = 2g = 10 cycles
 
+// Color Sensor Calibration (Legacy)
+const int WHITE_R = 25;
+const int WHITE_G = 30;
+const int WHITE_B = 22;
+const int BLACK_R = 250;
+const int BLACK_G = 300;
+const int BLACK_B = 280;
+
 #endif

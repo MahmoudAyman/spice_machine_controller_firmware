@@ -130,23 +130,3 @@ void tickDispenser() {
 bool isDispensing() {
     return currentDispenserState != DISPENSER_IDLE;
 }
-
-// --- Verification Logic ---
-// NO LONGER BLOCKING. Uses a state machine for startup check.
-enum IntegrityState {
-    INT_IDLE,
-    INT_MOVING,
-    INT_SCANNING,
-    INT_WAIT_USER,
-    INT_COMPLETE
-};
-static IntegrityState intState = INT_IDLE;
-static int intTubeIdx = 0;
-static bool intSuccess = true;
-
-void verifySystemIntegrity() {
-    // Legacy blocking version removed. Logic moved to main loop states if needed,
-    // or kept as a special "System Check" state.
-    // For now, we'll keep the function signature but make it non-blocking if called.
-    // Realistically, verifySystemIntegrity should be a STATE in the main machine.
-}

@@ -20,7 +20,7 @@ char keys[ROWS][COLS] = {
 Keypad customKeypad = Keypad(makeKeymap(keys), (byte*)rowPins, (byte*)colPins, ROWS, COLS);
 
 // --- Logic Variables ---
-SystemState currentState = STATE_MAIN_MENU;
+SystemState currentState = STATE_BOOT;
 String userInput = "";
 int currentTubeIndex = 0;
 int pendingTargetTubeIndex = 0; 
@@ -30,6 +30,7 @@ float currentRecipeGrams = 0.0;
 int servingsCount = 1; 
 bool isTubeCurrentlyFilled = false;
 bool isRecipeMode = false;
+bool isInitialCheck = false;
 int currentRecipeIndex = 0;     
 int currentIngredientIndex = 0; 
 
@@ -48,8 +49,10 @@ void changeState(SystemState newState) {
 void setup() {
   Serial.begin(115200);
   initHardware(); 
-  changeState(STATE_MAIN_MENU);
-  updateLcd("Spice Mixer", "Ready");
+  colorDetector.setCalibration(WHITE_R, WHITE_G, WHITE_B, BLACK_R, BLACK_G, BLACK_B);
+  
+  updateLcd("Spice Mixer", "Booting...");
+  changeState(STATE_BOOT); 
 }
 
 void loop() {
@@ -58,6 +61,25 @@ void loop() {
   colorDetector.tick();
   
   switch (currentState) {
+    case STATE_BOOT:
+      if (STATE_TIMEOUT(2000)) {
+          isInitialCheck = true;
+          currentTubeIndex = 0;
+          pendingTargetTubeIndex = 0;
+          stepper.enableOutputs();
+          updateLcd("System Check", "Starting...");
+          changeState(STATE_SYSTEM_CHECK);
+      }
+      break;
+
+    case STATE_SYSTEM_CHECK:
+      updateLcd("Scanning...", "Tube " + String(currentTubeIndex + 1));
+      if (STATE_TIMEOUT(500)) {
+          startIdentifySpice();
+          changeState(STATE_IDENTIFYING);
+      }
+      break;
+
     case STATE_MAIN_MENU: {
       char key = customKeypad.getKey();
       if (key == '1') {
@@ -91,7 +113,6 @@ void loop() {
              } else {
                updateLcd("Invalid", "1-12 Only");
                userInput = ""; 
-               // Auto-revert after 1s? For now, user just types again
              }
         } else if (key == 'E') { 
            updateLcd("1. Recipes", "2. Manual");
@@ -198,7 +219,7 @@ void loop() {
     case STATE_ROTATING_TO_TARGET: {
       stepper.run();
       if (stepper.distanceToGo() == 0) {
-        if (STATE_TIMEOUT(500)) { // Stabilization pause
+        if (STATE_TIMEOUT(500)) { 
             startIdentifySpice();
             changeState(STATE_IDENTIFYING);
         }
@@ -207,28 +228,47 @@ void loop() {
     }
 
     case STATE_IDENTIFYING: {
-      updateLcd("Identifying...", "");
       if (!isIdentifying()) {
         String detectedSpice = getIdentifiedSpice();
         String expectedSpice = spices[pendingTargetTubeIndex].name;
         
         if (detectedSpice == expectedSpice) {
            updateLcd("Correct:", detectedSpice);
-           changeState(STATE_CHECKING_FILL); 
+           if (isInitialCheck) {
+               if (STATE_TIMEOUT(1000)) {
+                   currentTubeIndex++;
+                   if (currentTubeIndex < TOTAL_TUBES) {
+                       pendingTargetTubeIndex = currentTubeIndex;
+                       stepper.move(STEPS_PER_TUBE);
+                       changeState(STATE_ROTATING_TO_TARGET);
+                   } else {
+                       updateLcd("Check Done!", "Returning...");
+                       isInitialCheck = false;
+                       prepareReturnHome();
+                   }
+               }
+           } else {
+               changeState(STATE_CHECKING_FILL); 
+           }
         } else {
            updateLcd("WRONG HERB!", "Found: " + detectedSpice);
-           // In async, we'd need a sub-state to show this message for 2s
-           // For now, let's just wait in this state before moving home
-           if (STATE_TIMEOUT(3000)) prepareReturnHome();
+           if (STATE_TIMEOUT(3000)) {
+               if (isInitialCheck) {
+                   updateLcd("Fix & Press N", "Tube " + String(currentTubeIndex + 1));
+                   changeState(STATE_EMPTY_RETRY); // Re-use retry logic for system check
+               } else {
+                   prepareReturnHome();
+               }
+           }
         }
       }
       break;
     }
 
     case STATE_CHECKING_FILL: {
-      if (STATE_TIMEOUT(1000)) { // Show "Correct" for 1s
+      if (STATE_TIMEOUT(1000)) { 
           int laserState = digitalRead(LASER_RX_PIN);
-          if (laserState == HIGH) { // Tube Filled
+          if (laserState == HIGH) { 
             updateLcd("Status:", "Tube Filled");
             startDispense(targetDispenseCycles);
             changeState(STATE_DISPENSING);
@@ -242,8 +282,14 @@ void loop() {
 
     case STATE_EMPTY_RETRY: {
       char key = customKeypad.getKey();
-      if (key == 'N') changeState(STATE_CHECKING_FILL); 
-      else if (key == 'E') prepareReturnHome();
+      if (key == 'N') {
+          if (isInitialCheck) changeState(STATE_SYSTEM_CHECK);
+          else changeState(STATE_CHECKING_FILL);
+      } 
+      else if (key == 'E') {
+          isInitialCheck = false;
+          prepareReturnHome();
+      }
       break;
     }
 
@@ -257,7 +303,6 @@ void loop() {
                startRecipeIngredient();
             } else {
                updateLcd("Recipe Done!", "Returning...");
-               changeState(STATE_RETURNING_HOME); // Set return home in prepareReturnHome
                prepareReturnHome();
             }
           } else {

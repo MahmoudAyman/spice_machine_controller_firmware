@@ -27,6 +27,4 @@ void startDispense(int totalCycles);
 void tickDispenser();
 bool isDispensing();
 
-void verifySystemIntegrity();
-
 #endif
