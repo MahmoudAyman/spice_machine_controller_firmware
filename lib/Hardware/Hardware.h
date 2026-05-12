@@ -27,4 +27,7 @@ void startDispense(int totalCycles);
 void tickDispenser();
 bool isDispensing();
 
+// --- Emergency stop (used by abort path) ---
+void emergencyStopHardware();
+
 #endif

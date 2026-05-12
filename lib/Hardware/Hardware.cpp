@@ -14,54 +14,97 @@ void initHardware() {
   Wire.begin();
   
   // LCD
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println(F("LCD Failed")); while(1);
+  if (simulationEnabled) {
+      Serial.println("[SIM] Initializing LCD...");
+  } else {
+      if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+        Serial.println(F("LCD Failed")); while(1);
+      }
+      display.clearDisplay();
+      display.setTextColor(SSD1306_WHITE);
+      display.setTextSize(2);
   }
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(2);
 
   // Stepper
-  pinMode(ENABLE_PIN, OUTPUT); digitalWrite(ENABLE_PIN, HIGH);
-  stepper.setMaxSpeed(200); stepper.setAcceleration(50);   
-  stepper.setEnablePin(ENABLE_PIN); stepper.setPinsInverted(true, false, true);
+  if (simulationEnabled) {
+      Serial.println("[SIM] Initializing Stepper...");
+  } else {
+      pinMode(ENABLE_PIN, OUTPUT); digitalWrite(ENABLE_PIN, HIGH);
+      stepper.setMaxSpeed(200); stepper.setAcceleration(50);   
+      stepper.setEnablePin(ENABLE_PIN); stepper.setPinsInverted(true, false, true);
+  }
 
   // Sensors
-  colorDetector.begin();
-  pinMode(LASER_RX_PIN, INPUT);
+  if (simulationEnabled) {
+      Serial.println("[SIM] Initializing Sensors...");
+  } else {
+      colorDetector.begin();
+      pinMode(LASER_RX_PIN, INPUT);
+  }
 
   // Servo
-  dispenserServo.attach(SERVO_PIN, 500, 2500); 
-  dispenserServo.write(0);
+  if (simulationEnabled) {
+      Serial.println("[SIM] Initializing Servo...");
+  } else {
+      dispenserServo.attach(SERVO_PIN, 500, 2500); 
+      dispenserServo.write(0);
+  }
 
   // Vibrator
-  pinMode(VIBRATOR_PIN, OUTPUT);
-  digitalWrite(VIBRATOR_PIN, LOW); // Ensure off at startup
+  if (!simulationEnabled) {
+      pinMode(VIBRATOR_PIN, OUTPUT);
+      digitalWrite(VIBRATOR_PIN, LOW); // Ensure off at startup
+  } else {
+      Serial.println("[SIM] Skipping Vibrator Init (GPIO 1 conflict)");
+  }
 }
 
 // --- Display Helper ---
 void updateLcd(String line1, String line2) {
-  display.clearDisplay();
-  display.setCursor(0, 10);
-  display.print(line1);
-  display.setCursor(0, 40);
-  display.print(line2);
-  display.display();
+  if (simulationEnabled) {
+      Serial.printf("[LCD] %s | %s\n", line1.c_str(), line2.c_str());
+  } else {
+      display.clearDisplay();
+      display.setCursor(0, 10);
+      display.print(line1);
+      display.setCursor(0, 40);
+      display.print(line2);
+      display.display();
+  }
 }
 
 String identifySpice() {
+  if (simulationEnabled) {
+      return spices[pendingTargetTubeIndex].name; // Always correct in simulation
+  }
   return colorDetector.identify(spices, NUM_SPICES, MATCH_THRESHOLD);
 }
 
 void startIdentifySpice() {
-    colorDetector.startIdentification(spices, NUM_SPICES, MATCH_THRESHOLD);
+    if (simulationEnabled) {
+        Serial.printf("[SIM] Identifying tube %d...\n", pendingTargetTubeIndex + 1);
+    } else {
+        colorDetector.startIdentification(spices, NUM_SPICES, MATCH_THRESHOLD);
+    }
 }
 
 bool isIdentifying() {
+    if (simulationEnabled) {
+        static unsigned long simStart = 0;
+        if (simStart == 0) simStart = millis();
+        if (millis() - simStart >= 1000) { // 1s simulation
+            simStart = 0;
+            return false;
+        }
+        return true;
+    }
     return colorDetector.isBusy();
 }
 
 String getIdentifiedSpice() {
+    if (simulationEnabled) {
+        return spices[pendingTargetTubeIndex].name;
+    }
     return colorDetector.getResult();
 }
 
@@ -73,7 +116,7 @@ void startDispense(int totalCycles) {
     currentDispenserState = DISPENSER_SWEEP_FORWARD;
     servoPos = 0;
     lastDispenserActionTime = millis();
-    Serial.printf("Starting non-blocking dispense: %d cycles\n", remainingCycles);
+    Serial.printf("%s: %d cycles\n", simulationEnabled ? "[SIM] Starting dispense" : "Starting non-blocking dispense", remainingCycles);
 }
 
 void tickDispenser() {
@@ -84,9 +127,9 @@ void tickDispenser() {
             break;
 
         case DISPENSER_SWEEP_FORWARD:
-            if (now - lastDispenserActionTime >= 10) { // Increment every 10ms
+            if (now - lastDispenserActionTime >= (simulationEnabled ? 2 : 10)) { // Faster in simulation
                 servoPos += 10;
-                dispenserServo.write(servoPos);
+                if (!simulationEnabled) dispenserServo.write(servoPos);
                 lastDispenserActionTime = now;
                 if (servoPos >= 360) {
                     currentDispenserState = DISPENSER_SWEEP_BACKWARD;
@@ -95,22 +138,24 @@ void tickDispenser() {
             break;
 
         case DISPENSER_SWEEP_BACKWARD:
-            if (now - lastDispenserActionTime >= 10) {
+            if (now - lastDispenserActionTime >= (simulationEnabled ? 2 : 10)) {
                 servoPos -= 10;
-                dispenserServo.write(servoPos);
+                if (!simulationEnabled) dispenserServo.write(servoPos);
                 lastDispenserActionTime = now;
                 if (servoPos <= 0) {
                     currentDispenserState = DISPENSER_VIBRATING;
-                    digitalWrite(VIBRATOR_PIN, HIGH);
+                    if (!simulationEnabled) digitalWrite(VIBRATOR_PIN, HIGH);
                 }
             }
             break;
 
         case DISPENSER_VIBRATING:
-            if (now - lastDispenserActionTime >= 150) { // Vibrate for 150ms
-                digitalWrite(VIBRATOR_PIN, LOW);
+            if (now - lastDispenserActionTime >= (simulationEnabled ? 10 : 150)) { 
+                if (!simulationEnabled) digitalWrite(VIBRATOR_PIN, LOW);
                 remainingCycles--;
-                Serial.printf("Cycle complete. Remaining: %d\n", remainingCycles);
+                if (remainingCycles % 5 == 0 || remainingCycles < 5) {
+                    Serial.printf("[DEBUG] Cycle complete. Remaining: %d\n", remainingCycles);
+                }
                 if (remainingCycles > 0) {
                     currentDispenserState = DISPENSER_SWEEP_FORWARD;
                     servoPos = 0;
@@ -129,4 +174,16 @@ void tickDispenser() {
 
 bool isDispensing() {
     return currentDispenserState != DISPENSER_IDLE;
+}
+
+void emergencyStopHardware() {
+    // Stop dispensing immediately
+    remainingCycles = 0;
+    currentDispenserState = DISPENSER_IDLE;
+    digitalWrite(VIBRATOR_PIN, LOW);
+    dispenserServo.write(0);
+
+    // Stop stepper output immediately; motion will be re-initiated by the main state machine if needed
+    stepper.stop();
+    stepper.disableOutputs();
 }

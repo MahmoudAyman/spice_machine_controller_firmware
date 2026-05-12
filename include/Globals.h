@@ -9,6 +9,7 @@
 #include "Configuration.h"
 #include "Database.h"
 #include "../lib/ColorDetector/ColorDetector.h"
+#include "../lib/BLEManager/BLEManager.h"
 
 // --- State Machine Enum ---
 enum SystemState {
@@ -35,10 +36,18 @@ extern AccelStepper stepper;
 extern Servo dispenserServo;
 extern Keypad customKeypad;
 extern ColorDetector colorDetector;
+extern BLEManager bleManager;
 
 // Expose Logic Variables
+extern bool simulationEnabled;
 extern int currentTubeIndex;
-extern SystemState currentState; // Requires enum definition in .ino or main header, 
-                                // but for simple Arduino structure, we keep State Enum in main.
+extern SystemState currentState; 
+extern bool abortTriggered;
+extern bool remoteRequestTriggered;
+extern Recipe remoteRecipe;
+extern int pendingTargetTubeIndex;
+
+// Function Prototypes
+void sendBleStatus();
 
 #endif

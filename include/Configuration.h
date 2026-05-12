@@ -3,6 +3,9 @@
 
 #include <Arduino.h>
 
+// --- System Configuration ---
+#define SIMULATION_MODE 1  // Set to 1 to test without physical hardware connected
+
 // --- Pin Definitions ---
 // Display
 #define I2C_SDA       21
@@ -31,7 +34,7 @@ const byte colPins[COLS] = {14, 12, 13, 4};
 
 // Servo & Vibrator
 #define SERVO_PIN     15
-#define VIBRATOR_PIN  1   
+#define VIBRATOR_PIN  1   // NOTE: GPIO 1 is Serial TX. Using it for hardware will block Serial. 
 
 // --- Constants ---
 #define STEPS_PER_REVOLUTION 820
