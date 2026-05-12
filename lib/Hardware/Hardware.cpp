@@ -3,6 +3,12 @@
 #include "Configuration.h"
 #include "Database.h"
 
+// --- Private Dispenser State ---
+static DispenserState currentDispenserState = DISPENSER_IDLE;
+static int remainingCycles = 0;
+static unsigned long lastDispenserActionTime = 0;
+static int servoPos = 0;
+
 // --- Hardware Initialization ---
 void initHardware() {
   Wire.begin();
@@ -47,25 +53,76 @@ String identifySpice() {
   return colorDetector.identify(spices, NUM_SPICES, MATCH_THRESHOLD);
 }
 
-// --- Dispensing Logic ---
-void dispenseSpice(int totalCycles) {
-  Serial.printf("Dispensing %d cycles...\n", totalCycles);
-  for (int i = 0; i < totalCycles; i++) {
-    // Servo Sweep Forward
-    for (int pos = 0; pos <= 360; pos += 10) { dispenserServo.write(pos); }
-    // Servo Sweep Backward
-    for (int pos = 360; pos >= 0; pos -= 10) { dispenserServo.write(pos); }
-    
-    // --- Vibrator Activation ---
-    digitalWrite(VIBRATOR_PIN, HIGH);
-    delay(150); // Vibrate for 150ms
-    digitalWrite(VIBRATOR_PIN, LOW);
+// --- Non-blocking Dispensing Logic ---
 
-    Serial.printf("Cycle %d/%d complete.\n", i + 1, totalCycles);
-  }
+void startDispense(int totalCycles) {
+    if (totalCycles <= 0) return;
+    remainingCycles = totalCycles;
+    currentDispenserState = DISPENSER_SWEEP_FORWARD;
+    servoPos = 0;
+    lastDispenserActionTime = millis();
+    Serial.printf("Starting non-blocking dispense: %d cycles\n", remainingCycles);
+}
+
+void tickDispenser() {
+    unsigned long now = millis();
+
+    switch (currentDispenserState) {
+        case DISPENSER_IDLE:
+            break;
+
+        case DISPENSER_SWEEP_FORWARD:
+            if (now - lastDispenserActionTime >= 10) { // Increment every 10ms
+                servoPos += 10;
+                dispenserServo.write(servoPos);
+                lastDispenserActionTime = now;
+                if (servoPos >= 360) {
+                    currentDispenserState = DISPENSER_SWEEP_BACKWARD;
+                }
+            }
+            break;
+
+        case DISPENSER_SWEEP_BACKWARD:
+            if (now - lastDispenserActionTime >= 10) {
+                servoPos -= 10;
+                dispenserServo.write(servoPos);
+                lastDispenserActionTime = now;
+                if (servoPos <= 0) {
+                    currentDispenserState = DISPENSER_VIBRATING;
+                    digitalWrite(VIBRATOR_PIN, HIGH);
+                }
+            }
+            break;
+
+        case DISPENSER_VIBRATING:
+            if (now - lastDispenserActionTime >= 150) { // Vibrate for 150ms
+                digitalWrite(VIBRATOR_PIN, LOW);
+                remainingCycles--;
+                Serial.printf("Cycle complete. Remaining: %d\n", remainingCycles);
+                if (remainingCycles > 0) {
+                    currentDispenserState = DISPENSER_SWEEP_FORWARD;
+                    servoPos = 0;
+                } else {
+                    currentDispenserState = DISPENSER_IDLE;
+                    Serial.println("Dispensing complete.");
+                }
+                lastDispenserActionTime = now;
+            }
+            break;
+            
+        case DISPENSER_COOLDOWN:
+            // Optional: add delay between cycles if needed
+            break;
+    }
+}
+
+bool isDispensing() {
+    return currentDispenserState != DISPENSER_IDLE;
 }
 
 // --- Verification Logic ---
+// Note: This still uses blocking loops as it is a startup/maintenance routine.
+// We may want to refactor this later if we need it to be responsive to BLE.
 void verifySystemIntegrity() {
   updateLcd("System Check", "Verifying Tubes");
   delay(1000);

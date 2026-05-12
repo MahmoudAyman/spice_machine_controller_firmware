@@ -51,6 +51,9 @@ void setup() {
 }
 
 void loop() {
+  // --- Asynchronous Ticks ---
+  tickDispenser();
+  
   switch (currentState) {
     case STATE_MAIN_MENU: {
       char key = customKeypad.getKey();
@@ -257,6 +260,7 @@ void loop() {
       if (isTubeCurrentlyFilled) {
         updateLcd("Status:", "Tube Filled");
         delay(1000); 
+        startDispense(targetDispenseCycles);
         currentState = STATE_DISPENSING;
       } else {
         updateLcd("TUBE EMPTY!", "Fill & Press Enter");
@@ -287,24 +291,25 @@ void loop() {
         updateLcd("Dispensing...", String(manualQuantityInput) + " Tlp");
       }
       
-      dispenseSpice(targetDispenseCycles); // Hardware.cpp
-      
-      if (isRecipeMode) {
-        currentIngredientIndex++;
-        
-        if (currentIngredientIndex < recipes[currentRecipeIndex].ingredientCount) {
-           updateLcd("Next Ingr...", "");
-           delay(1000);
-           startRecipeIngredient();
-        } else {
-           updateLcd("Recipe Done!", "Returning...");
-           delay(1500);
-           prepareReturnHome();
-        }
-      } else {
-        updateLcd("Done!", "Returning...");
-        delay(1000);
-        prepareReturnHome(); 
+      // Wait for the non-blocking dispenser to finish
+      if (!isDispensing()) {
+          if (isRecipeMode) {
+            currentIngredientIndex++;
+            
+            if (currentIngredientIndex < recipes[currentRecipeIndex].ingredientCount) {
+               updateLcd("Next Ingr...", "");
+               delay(1000);
+               startRecipeIngredient();
+            } else {
+               updateLcd("Recipe Done!", "Returning...");
+               delay(1500);
+               prepareReturnHome();
+            }
+          } else {
+            updateLcd("Done!", "Returning...");
+            delay(1000);
+            prepareReturnHome(); 
+          }
       }
       break;
     }

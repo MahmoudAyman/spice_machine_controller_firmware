@@ -10,7 +10,20 @@
 void initHardware();
 void updateLcd(String line1, String line2);
 String identifySpice();
-void dispenseSpice(int totalCycles);
+
+// --- Non-blocking Dispenser ---
+enum DispenserState {
+    DISPENSER_IDLE,
+    DISPENSER_SWEEP_FORWARD,
+    DISPENSER_SWEEP_BACKWARD,
+    DISPENSER_VIBRATING,
+    DISPENSER_COOLDOWN
+};
+
+void startDispense(int totalCycles);
+void tickDispenser();
+bool isDispensing();
+
 void verifySystemIntegrity();
 
 #endif
