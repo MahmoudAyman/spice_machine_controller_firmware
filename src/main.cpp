@@ -106,7 +106,7 @@ void setup() {
   if (!initStorage()) {
       Serial.println("Storage Initialization Failed!");
   }
-  loadDatabase();
+  loadDefaultProfile(); // Boot with the default profile for physical keypad
 
   initHardware(); 
   colorDetector.setCalibration(WHITE_R, WHITE_G, WHITE_B, BLACK_R, BLACK_G, BLACK_B);
@@ -407,7 +407,7 @@ void loop() {
           spices[pendingTargetTubeIndex].level -= (int)dispensed;
           if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
           
-          saveDatabase(); // Commit to LittleFS
+          saveProfile(); // Commit to LittleFS
           
           // Trigger low spice alert if below 15%
           if (spices[pendingTargetTubeIndex].level < 15) {

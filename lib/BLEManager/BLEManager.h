@@ -44,8 +44,8 @@ private:
         BLEManager* _parent;
     public:
         ServerCallbacks(BLEManager* parent) : _parent(parent) {}
-        void onConnect(BLEServer* pServer) override { _parent->_deviceConnected = true; }
-        void onDisconnect(BLEServer* pServer) override { _parent->_deviceConnected = false; _parent->_disconnectAtMs = millis(); }
+        void onConnect(BLEServer* pServer) override;
+        void onDisconnect(BLEServer* pServer) override;
     };
 };
 

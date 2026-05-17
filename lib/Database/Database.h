@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 
+#define MAX_RECIPES 30
+
 struct Spice {
   String name;
   int r_val, g_val, b_val;
@@ -23,13 +25,15 @@ struct Recipe {
 // --- DATA DECLARATIONS ---
 extern const int NUM_SPICES;
 extern Spice spices[];
-extern const Recipe recipes[];
+extern Recipe recipes[MAX_RECIPES];
+extern int activeRecipeCount;
+extern String activeProfileUUID;
 
 // --- PERSISTENCE METHODS ---
 bool initStorage();
-void loadDatabase();
-void saveDatabase();
-void resetDatabase();
-bool checkProfile(String uuid);
+void loadDefaultProfile();
+bool loadProfile(String uuid);
+void saveProfile();
+void deleteProfile(String uuid);
 
 #endif

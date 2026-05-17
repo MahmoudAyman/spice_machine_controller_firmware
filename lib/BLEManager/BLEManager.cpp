@@ -1,6 +1,24 @@
 #include "BLEManager.h"
 #include "Globals.h"
 #include "Hardware.h"
+#include "Database.h"
+
+// --- Server Callbacks Implementation ---
+void BLEManager::ServerCallbacks::onConnect(BLEServer* pServer) {
+    _parent->_deviceConnected = true;
+}
+
+void BLEManager::ServerCallbacks::onDisconnect(BLEServer* pServer) {
+    _parent->_deviceConnected = false; 
+    _parent->_disconnectAtMs = millis(); 
+    
+    // Save the profile when the app disconnects
+    if (activeProfileUUID != "") {
+        saveProfile();
+    }
+    // Fallback to default profile for physical keypad usage
+    loadDefaultProfile();
+}
 
 BLEManager::BLEManager() : _pServer(NULL), _pCommandChar(NULL), _pStatusChar(NULL), _pSyncChar(NULL) {}
 
@@ -94,16 +112,23 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             int version = doc["version"];
             Serial.printf("App UUID: %s, Version: %d\n", uuid ? uuid : "null", version);
             
-            bool exists = false;
+            bool configured = false;
             if (uuid) {
-                exists = checkProfile(String(uuid));
+                String uuidStr = String(uuid);
+                configured = loadProfile(uuidStr);
+                
+                if (!configured) {
+                    // Profile does not exist yet. We stay in default RAM state but prep the UUID.
+                    activeProfileUUID = uuidStr; 
+                    Serial.println("Profile unconfigured. Waiting for initial sync from App.");
+                }
             }
 
             JsonDocument ack;
             ack["type"] = "ack";
             ack["command"] = "handshake";
-            ack["status"] = "success";
-            ack["new_device"] = !exists;
+            ack["status"] = configured ? "success" : "unconfigured";
+            ack["new_device"] = !configured;
             notifyStatus(ack);
         }
         else if (strcmp(type, "ping") == 0) {
@@ -184,7 +209,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             if (slot >= 1 && slot <= NUM_SPICES && name) {
                 Serial.printf("Updating slot %d to %s\n", slot, name);
                 spices[slot - 1].name = String(name);
-                saveDatabase();
+                saveProfile();
                 
                 JsonDocument ack;
                 ack["type"] = "ack";
@@ -205,7 +230,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             if (slot >= 1 && slot <= NUM_SPICES) {
                 Serial.printf("Refilling slot %d\n", slot);
                 spices[slot - 1].level = 100;
-                saveDatabase();
+                saveProfile();
                 
                 JsonDocument ack;
                 ack["type"] = "ack";
