@@ -36,6 +36,8 @@ private:
     BLECharacteristic* _pStatusChar;
     BLECharacteristic* _pSyncChar;
     
+    std::string _rxBuffer;
+    
     bool _deviceConnected = false;
     bool _oldDeviceConnected = false;
     unsigned long _disconnectAtMs = 0;

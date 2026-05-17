@@ -80,17 +80,25 @@ void BLEManager::tick() {
 void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
     std::string value = pCharacteristic->getValue();
     if (value.length() > 0) {
-        Serial.printf("BLE Received: %s\n", value.c_str());
+        _rxBuffer += value;
         
-        // Use a larger document for complex recipes
         JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, value);
+        DeserializationError error = deserializeJson(doc, _rxBuffer);
+
+        if (error == DeserializationError::IncompleteInput) {
+            // Standard BLE fragmentation. Wait for the rest of the payload.
+            return;
+        }
 
         if (error) {
             Serial.print(F("deserializeJson() failed: "));
             Serial.println(error.f_str());
+            _rxBuffer.clear(); // Clear buffer to recover from corrupt data
             return;
         }
+
+        Serial.printf("BLE Command Parsed: %s\n", _rxBuffer.c_str());
+        _rxBuffer.clear(); // Successfully parsed, reset buffer for next command
 
         const char* type = doc["type"];
         if (!type) return;
@@ -114,23 +122,19 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             int version = doc["version"];
             Serial.printf("App UUID: %s, Version: %d\n", uuid ? uuid : "null", version);
             
-            bool configured = false;
+            // Ensure global spices are loaded (in case app forces a re-sync)
+            loadGlobalSpices();
+
             if (uuid) {
                 String uuidStr = String(uuid);
-                configured = loadProfile(uuidStr);
-                
-                if (!configured) {
-                    // Profile does not exist yet. We stay in default RAM state but prep the UUID.
-                    activeProfileUUID = uuidStr; 
-                    Serial.println("Profile unconfigured. Waiting for initial sync from App.");
-                }
+                loadProfile(uuidStr);
             }
 
             JsonDocument ack;
             ack["type"] = "ack";
             ack["command"] = "handshake";
-            ack["status"] = configured ? "success" : "unconfigured";
-            ack["new_device"] = !configured;
+            ack["status"] = isMachineConfigured ? "success" : "unconfigured";
+            ack["new_device"] = !isMachineConfigured;
             notifyStatus(ack);
         }
         else if (strcmp(type, "ping") == 0) {
@@ -145,15 +149,14 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             sendBleStatus();
         }
         else if (strcmp(type, "get_levels") == 0) {
-            Serial.println("BLE: GET_LEVELS");
+            Serial.println("BLE: GET_LEVELS (Key-Value)");
+            // Using a simple key-value object to minimize payload size.
+            // Example: {"type":"levels", "data":{"1":100, "2":85, ...}}
             JsonDocument levels;
             levels["type"] = "levels";
-            JsonArray data = levels["data"].to<JsonArray>();
+            JsonObject data = levels["data"].to<JsonObject>();
             for (int i = 0; i < NUM_SPICES; i++) {
-                JsonObject entry = data.add<JsonObject>();
-                entry["slot"] = i + 1;
-                entry["name"] = spices[i].name;
-                entry["level"] = spices[i].level;
+                data[String(i + 1)] = spices[i].level;
             }
             notifyLevels(levels);
         }
@@ -179,12 +182,19 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 return;
             }
 
-            if (doc["recipe_id"].is<int>()) {
-                int rId = doc["recipe_id"];
-                if (rId >= 1 && rId <= activeRecipeCount) {
-                    remoteRecipe = recipes[rId - 1];
-                    Serial.printf("[DEBUG] Loading recipe '%s' from profile.\n", remoteRecipe.name.c_str());
-                } else {
+            if (doc["recipe_id"].is<const char*>()) {
+                String rId = doc["recipe_id"].as<String>();
+                bool found = false;
+                for (int i = 0; i < activeRecipeCount; i++) {
+                    if (recipes[i].id == rId) {
+                        remoteRecipe = recipes[i];
+                        found = true;
+                        Serial.printf("[DEBUG] Loading recipe '%s' from profile.\n", remoteRecipe.name.c_str());
+                        break;
+                    }
+                }
+                
+                if (!found) {
                     JsonDocument nak;
                     nak["type"] = "ack";
                     nak["command"] = "dispense";
@@ -234,6 +244,8 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 activeRecipeCount = 0;
                 for (JsonObject rObj : recipesArr) {
                     if (activeRecipeCount >= MAX_RECIPES) break;
+                    String fallbackId = "temp_" + String(activeRecipeCount);
+                    recipes[activeRecipeCount].id = rObj["id"] | fallbackId;
                     recipes[activeRecipeCount].name = rObj["name"].as<String>();
                     JsonArray ingredientsArr = rObj["ingredients"];
                     recipes[activeRecipeCount].ingredientCount = 0;
@@ -288,10 +300,10 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             Serial.println("BLE: REFILL");
             int slot = doc["slot"];
             if (slot >= 1 && slot <= NUM_SPICES) {
-                Serial.printf("[DEBUG] Refilling slot %d to 100%%. Saving to active profile.\n", slot);
+                Serial.printf("[DEBUG] Refilling slot %d to 100%%. Saving to GLOBAL profile.\n", slot);
                 spices[slot - 1].level = 100;
-                saveProfile();
-                
+                saveGlobalSpices();
+
                 JsonDocument ack;
                 ack["type"] = "ack";
                 ack["command"] = "refill";
@@ -305,6 +317,33 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 nak["status"] = "fail";
                 notifyStatus(nak);
             }
+        }
+        else if (strcmp(type, "print_profile") == 0) {
+            Serial.println("--- CURRENT PROFILE DEBUG ---");
+            Serial.printf("Active UUID: %s\n", activeProfileUUID.c_str());
+            Serial.printf("Total Recipes: %d\n", activeRecipeCount);
+            for(int i = 0; i < activeRecipeCount; i++) {
+                Serial.printf("[%d] ID: %s | Name: %s | Items: %d\n", i+1, recipes[i].id.c_str(), recipes[i].name.c_str(), recipes[i].ingredientCount);
+                for(int j = 0; j < recipes[i].ingredientCount; j++) {
+                    Serial.printf("  - Slot %d: %.1fg\n", recipes[i].ingredients[j].spiceIndex + 1, recipes[i].ingredients[j].quantityGrams);
+                }
+            }
+            Serial.println("-----------------------------");
+            JsonDocument ack;
+            ack["type"] = "ack";
+            ack["command"] = "print_profile";
+            ack["status"] = "success";
+            notifyStatus(ack);
+        }
+        else if (strcmp(type, "factory_reset") == 0) {
+            Serial.println("BLE: FACTORY RESET");
+            JsonDocument ack;
+            ack["type"] = "ack";
+            ack["command"] = "factory_reset";
+            ack["status"] = "success";
+            notifyStatus(ack);
+            delay(100); // Give time for ACK to send
+            formatStorage(); // Wipes LittleFS and reboots
         }
         else {
             Serial.printf("Unknown command type: %s\n", type);

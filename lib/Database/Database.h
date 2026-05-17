@@ -17,6 +17,7 @@ struct RecipeItem {
 };
 
 struct Recipe {
+  String id;
   String name;
   int ingredientCount;
   RecipeItem ingredients[10]; 
@@ -26,12 +27,14 @@ struct Recipe {
 extern const int NUM_SPICES;
 extern Spice spices[];
 extern Recipe recipes[MAX_RECIPES];
+extern const Recipe defaultRecipes[];
 extern int activeRecipeCount;
 extern String activeProfileUUID;
 extern bool isMachineConfigured;
 
 // --- PERSISTENCE METHODS ---
 bool initStorage();
+void formatStorage();
 void loadGlobalSpices();
 void saveGlobalSpices();
 bool loadProfile(String uuid);

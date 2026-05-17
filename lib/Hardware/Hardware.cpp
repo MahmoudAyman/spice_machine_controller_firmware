@@ -119,6 +119,10 @@ void startDispense(int totalCycles) {
     Serial.printf("%s: %d cycles\n", simulationEnabled ? "[SIM] Starting dispense" : "Starting non-blocking dispense", remainingCycles);
 }
 
+int getRemainingDispenseCycles() {
+    return remainingCycles;
+}
+
 void tickDispenser() {
     unsigned long now = millis();
 

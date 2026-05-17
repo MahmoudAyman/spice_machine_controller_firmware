@@ -107,11 +107,12 @@ void setup() {
       Serial.println("Storage Initialization Failed!");
   }
   loadGlobalSpices();
-  // By default, no user profile is active. It will just use the last loaded one in RAM
-  // if disconnected, or defaultRecipes if brand new. We'll load default recipes manually here
-  // to ensure keypad has something if no BLE app has ever connected.
+  // By default, no user profile is active. 
+  // If the machine has never been configured by an app, we load default recipes 
+  // into RAM so the physical keypad has something to display out of the box.
   if (activeProfileUUID == "") {
       activeRecipeCount = 12; // default 12 recipes
+      for (int i = 0; i < activeRecipeCount; i++) recipes[i] = defaultRecipes[i];
   }
 
   initHardware(); 
@@ -131,6 +132,27 @@ void loop() {
   // --- High Priority BLE Interrupts ---
   if (abortTriggered) {
       abortTriggered = false;
+      
+      // Calculate how much was actually dispensed before aborting
+      if (currentState == STATE_DISPENSING) {
+          float percentageCompleted = 0.0;
+          if (targetDispenseCycles > 0) {
+              // Calculate remaining cycles vs total to find dispensed percentage
+              int remainingCycles = getRemainingDispenseCycles(); // Requires a new helper
+              int completedCycles = targetDispenseCycles - remainingCycles;
+              percentageCompleted = (float)completedCycles / targetDispenseCycles;
+          }
+          
+          float totalExpected = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0);
+          float actualDispensed = totalExpected * percentageCompleted;
+          
+          spices[pendingTargetTubeIndex].level -= (int)actualDispensed;
+          if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
+          
+          saveGlobalSpices(); 
+          Serial.printf("[DEBUG] Aborted. Dispensed approx %.1fg of %s\n", actualDispensed, spices[pendingTargetTubeIndex].name.c_str());
+      }
+
       isRecipeMode = false;
       isInitialCheck = false;
       emergencyStopHardware();

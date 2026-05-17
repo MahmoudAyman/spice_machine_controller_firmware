@@ -36,18 +36,18 @@ const Spice defaultSpices[NUM_SPICES] = {
 };
 
 const Recipe defaultRecipes[12] = {
-  { "Italian Herbs", 8, { {2, 1.6}, {4, 1.6}, {6, 1.2}, {8, 1.2}, {10, 1.0}, {12, 0.8}, {14, 0.6}, {16, 0.2} }},        
-  { "Taco Seas.", 8, { {0, 2.0}, {18, 2.2}, {1, 1.4}, {12, 1.2}, {14, 0.8}, {16, 0.8}, {6, 0.6}, {4, 0.6} }},
-  { "Curry Madras", 9, { {3, 2.0}, {5, 1.6}, {18, 1.2}, {0, 0.8}, {7, 0.8}, {12, 0.6}, {14, 0.6}, {16, 0.4}, {9, 0.4} }},
-  { "BBQ", 9, { {0, 2.4}, {12, 1.2}, {1, 1.2}, {14, 0.8}, {18, 0.6}, {16, 0.6}, {6, 0.6}, {4, 0.2}, {19, 0.4} }},
-  { "Garam Masala", 9, { {9, 2.0}, {18, 1.6}, {5, 1.2}, {19, 0.8}, {14, 0.6}, {11, 0.6}, {13, 0.6}, {15, 0.4}, {17, 0.4} }},
-  { "Ras el Hanout", 10, { {18, 1.6}, {5, 1.6}, {19, 0.8}, {0, 0.8}, {7, 0.8}, {9, 0.6}, {11, 0.4}, {13, 0.6}, {3, 0.6}, {14, 0.6} }},
-  { "Gyros", 8, { {4, 1.6}, {6, 1.2}, {12, 1.2}, {1, 1.2}, {0, 1.2}, {18, 0.6}, {14, 0.6}, {8, 0.4} }},
-  { "Shawarma", 9, { {18, 1.6}, {5, 1.2}, {0, 1.2}, {12, 1.2}, {1, 0.8}, {14, 0.6}, {3, 0.6}, {19, 0.4}, {9, 0.4} }},
-  { "ChiliConCarne", 7, { {0, 2.4}, {16, 1.6}, {18, 1.6}, {12, 0.8}, {1, 0.8}, {4, 0.4}, {14, 0.4} }},
-  { "Moroc. Tagine", 8, { {18, 1.6}, {5, 1.6}, {0, 1.2}, {3, 1.2}, {19, 0.8}, {7, 0.8}, {14, 0.4}, {9, 0.4} }},
-  { "Ind. Tandoori", 8, { {0, 2.0}, {18, 1.4}, {5, 1.2}, {12, 1.2}, {7, 0.8}, {3, 0.6}, {16, 0.6}, {9, 0.2} }},
-  { "H. de Provence", 8, { {6, 1.6}, {10, 1.6}, {4, 1.2}, {2, 1.2}, {8, 0.8}, {15, 0.6}, {14, 0.4}, {12, 0.6} }}
+  { "def_1", "Italian Herbs", 8, { {2, 1.6}, {4, 1.6}, {6, 1.2}, {8, 1.2}, {10, 1.0}, {12, 0.8}, {14, 0.6}, {16, 0.2} }},        
+  { "def_2", "Taco Seas.", 8, { {0, 2.0}, {18, 2.2}, {1, 1.4}, {12, 1.2}, {14, 0.8}, {16, 0.8}, {6, 0.6}, {4, 0.6} }},
+  { "def_3", "Curry Madras", 9, { {3, 2.0}, {5, 1.6}, {18, 1.2}, {0, 0.8}, {7, 0.8}, {12, 0.6}, {14, 0.6}, {16, 0.4}, {9, 0.4} }},
+  { "def_4", "BBQ", 9, { {0, 2.4}, {12, 1.2}, {1, 1.2}, {14, 0.8}, {18, 0.6}, {16, 0.6}, {6, 0.6}, {4, 0.2}, {19, 0.4} }},
+  { "def_5", "Garam Masala", 9, { {9, 2.0}, {18, 1.6}, {5, 1.2}, {19, 0.8}, {14, 0.6}, {11, 0.6}, {13, 0.6}, {15, 0.4}, {17, 0.4} }},
+  { "def_6", "Ras el Hanout", 10, { {18, 1.6}, {5, 1.6}, {19, 0.8}, {0, 0.8}, {7, 0.8}, {9, 0.6}, {11, 0.4}, {13, 0.6}, {3, 0.6}, {14, 0.6} }},
+  { "def_7", "Gyros", 8, { {4, 1.6}, {6, 1.2}, {12, 1.2}, {1, 1.2}, {0, 1.2}, {18, 0.6}, {14, 0.6}, {8, 0.4} }},
+  { "def_8", "Shawarma", 9, { {18, 1.6}, {5, 1.2}, {0, 1.2}, {12, 1.2}, {1, 0.8}, {14, 0.6}, {3, 0.6}, {19, 0.4}, {9, 0.4} }},
+  { "def_9", "ChiliConCarne", 7, { {0, 2.4}, {16, 1.6}, {18, 1.6}, {12, 0.8}, {1, 0.8}, {4, 0.4}, {14, 0.4} }},
+  { "def_10", "Moroc. Tagine", 8, { {18, 1.6}, {5, 1.6}, {0, 1.2}, {3, 1.2}, {19, 0.8}, {7, 0.8}, {14, 0.4}, {9, 0.4} }},
+  { "def_11", "Ind. Tandoori", 8, { {0, 2.0}, {18, 1.4}, {5, 1.2}, {12, 1.2}, {7, 0.8}, {3, 0.6}, {16, 0.6}, {9, 0.2} }},
+  { "def_12", "H. de Provence", 8, { {6, 1.6}, {10, 1.6}, {4, 1.2}, {2, 1.2}, {8, 0.8}, {15, 0.6}, {14, 0.4}, {12, 0.6} }}
 };
 
 bool initStorage() {
@@ -57,6 +57,14 @@ bool initStorage() {
     }
     Serial.println("LittleFS Mounted Successfully");
     return true;
+}
+
+void formatStorage() {
+    Serial.println("Formatting LittleFS... Please wait.");
+    LittleFS.format();
+    Serial.println("Format complete. Restarting device...");
+    delay(500);
+    ESP.restart();
 }
 
 void loadGlobalSpices() {
@@ -123,10 +131,9 @@ bool loadProfile(String uuid) {
     activeProfileUUID = uuid; // Keep it active even if it's new
     
     if (!LittleFS.exists(path)) {
-        Serial.printf("Profile for UUID %s not found. Using default recipes.\n", uuid.c_str());
-        activeRecipeCount = 12;
-        for (int i = 0; i < activeRecipeCount; i++) recipes[i] = defaultRecipes[i];
-        return false; // Does not exist
+        Serial.printf("Profile for UUID %s not found. Initializing empty profile.\n", uuid.c_str());
+        activeRecipeCount = 0; // Force user to configure their own recipes
+        return false; // Does not exist, needs sync from App
     }
 
     File file = LittleFS.open(path, "r");
@@ -146,6 +153,8 @@ bool loadProfile(String uuid) {
     activeRecipeCount = 0;
     for (JsonObject rObj : recipesArr) {
         if (activeRecipeCount >= MAX_RECIPES) break;
+        String fallbackId = "temp_" + String(activeRecipeCount);
+        recipes[activeRecipeCount].id = rObj["id"] | fallbackId;
         recipes[activeRecipeCount].name = rObj["name"].as<String>();
         
         JsonArray ingredientsArr = rObj["ingredients"];
@@ -184,6 +193,7 @@ void saveProfile() {
     JsonArray recipesArr = doc["recipes"].to<JsonArray>();
     for (int i = 0; i < activeRecipeCount; i++) {
         JsonObject rObj = recipesArr.add<JsonObject>();
+        rObj["id"] = recipes[i].id;
         rObj["name"] = recipes[i].name;
         JsonArray ingredientsArr = rObj["ingredients"].to<JsonArray>();
         for (int j = 0; j < recipes[i].ingredientCount; j++) {

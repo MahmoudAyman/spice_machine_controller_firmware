@@ -29,5 +29,6 @@ bool isDispensing();
 
 // --- Emergency stop (used by abort path) ---
 void emergencyStopHardware();
+int getRemainingDispenseCycles(); // Returns cycles left in current dispense
 
 #endif
