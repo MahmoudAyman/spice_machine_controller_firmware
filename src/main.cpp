@@ -102,6 +102,12 @@ void sendBleStatus() {
 
 void setup() {
   Serial.begin(115200);
+
+  if (!initStorage()) {
+      Serial.println("Storage Initialization Failed!");
+  }
+  loadDatabase();
+
   initHardware(); 
   colorDetector.setCalibration(WHITE_R, WHITE_G, WHITE_B, BLACK_R, BLACK_G, BLACK_B);
   bleManager.begin("Spice Dispenser");
@@ -397,6 +403,17 @@ void loop() {
       updateLcd("Dispensing...", isRecipeMode ? String(currentRecipeGrams, 1) + "g" : String(manualQuantityInput) + " Tlp");
       
       if (!isDispensing()) {
+          float dispensed = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0); // Assume 5g per teaspoon
+          spices[pendingTargetTubeIndex].level -= (int)dispensed;
+          if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
+          
+          saveDatabase(); // Commit to LittleFS
+          
+          // Trigger low spice alert if below 15%
+          if (spices[pendingTargetTubeIndex].level < 15) {
+              bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
+          }
+
           if (isRecipeMode) {
             currentIngredientIndex++;
             int count = (currentRecipeIndex == -1) ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount;

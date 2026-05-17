@@ -94,10 +94,16 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             int version = doc["version"];
             Serial.printf("App UUID: %s, Version: %d\n", uuid ? uuid : "null", version);
             
+            bool exists = false;
+            if (uuid) {
+                exists = checkProfile(String(uuid));
+            }
+
             JsonDocument ack;
             ack["type"] = "ack";
             ack["command"] = "handshake";
             ack["status"] = "success";
+            ack["new_device"] = !exists;
             notifyStatus(ack);
         }
         else if (strcmp(type, "ping") == 0) {
@@ -116,10 +122,11 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             JsonDocument levels;
             levels["type"] = "levels";
             JsonArray data = levels["data"].to<JsonArray>();
-            for (int i = 1; i <= 20; i++) {
+            for (int i = 0; i < NUM_SPICES; i++) {
                 JsonObject entry = data.add<JsonObject>();
-                entry["slot"] = i;
-                entry["level"] = simulationEnabled ? 100 : 85; // Mock data for now
+                entry["slot"] = i + 1;
+                entry["name"] = spices[i].name;
+                entry["level"] = spices[i].level;
             }
             notifyLevels(levels);
         }
@@ -174,26 +181,44 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             Serial.println("BLE: UPDATE_SLOT");
             int slot = doc["slot"];
             const char* name = doc["name"];
-            Serial.printf("Updating slot %d to %s\n", slot, name);
-            
-            // TODO: In Phase 4, actually update the database and store to LittleFS
-            JsonDocument ack;
-            ack["type"] = "ack";
-            ack["command"] = "update_slot";
-            ack["status"] = "success";
-            notifyStatus(ack);
+            if (slot >= 1 && slot <= NUM_SPICES && name) {
+                Serial.printf("Updating slot %d to %s\n", slot, name);
+                spices[slot - 1].name = String(name);
+                saveDatabase();
+                
+                JsonDocument ack;
+                ack["type"] = "ack";
+                ack["command"] = "update_slot";
+                ack["status"] = "success";
+                notifyStatus(ack);
+            } else {
+                JsonDocument nak;
+                nak["type"] = "ack";
+                nak["command"] = "update_slot";
+                nak["status"] = "fail";
+                notifyStatus(nak);
+            }
         }
         else if (strcmp(type, "refill") == 0) {
             Serial.println("BLE: REFILL");
             int slot = doc["slot"];
-            Serial.printf("Refilling slot %d\n", slot);
-            
-            // TODO: In Phase 4, reset level to 100%
-            JsonDocument ack;
-            ack["type"] = "ack";
-            ack["command"] = "refill";
-            ack["status"] = "success";
-            notifyStatus(ack);
+            if (slot >= 1 && slot <= NUM_SPICES) {
+                Serial.printf("Refilling slot %d\n", slot);
+                spices[slot - 1].level = 100;
+                saveDatabase();
+                
+                JsonDocument ack;
+                ack["type"] = "ack";
+                ack["command"] = "refill";
+                ack["status"] = "success";
+                notifyStatus(ack);
+            } else {
+                JsonDocument nak;
+                nak["type"] = "ack";
+                nak["command"] = "refill";
+                nak["status"] = "fail";
+                notifyStatus(nak);
+            }
         }
         else {
             Serial.printf("Unknown command type: %s\n", type);

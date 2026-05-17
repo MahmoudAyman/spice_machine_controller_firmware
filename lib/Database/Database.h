@@ -6,6 +6,7 @@
 struct Spice {
   String name;
   int r_val, g_val, b_val;
+  int level; // Current fill level (0-100)
 };
 
 struct RecipeItem {
@@ -21,7 +22,14 @@ struct Recipe {
 
 // --- DATA DECLARATIONS ---
 extern const int NUM_SPICES;
-extern const Spice spices[];
+extern Spice spices[];
 extern const Recipe recipes[];
+
+// --- PERSISTENCE METHODS ---
+bool initStorage();
+void loadDatabase();
+void saveDatabase();
+void resetDatabase();
+bool checkProfile(String uuid);
 
 #endif
