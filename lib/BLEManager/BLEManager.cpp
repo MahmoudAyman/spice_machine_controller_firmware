@@ -16,8 +16,9 @@ void BLEManager::ServerCallbacks::onDisconnect(BLEServer* pServer) {
     if (activeProfileUUID != "") {
         saveProfile();
     }
-    // Fallback to default profile for physical keypad usage
-    loadDefaultProfile();
+    // We no longer fallback to a default profile. The machine continues 
+    // using the last active profile for physical keypad usage, while
+    // spice levels remain perfectly in sync globally.
 }
 
 BLEManager::BLEManager() : _pServer(NULL), _pCommandChar(NULL), _pStatusChar(NULL), _pSyncChar(NULL) {}
@@ -58,7 +59,8 @@ void BLEManager::begin(const char* deviceName) {
     pAdvertising->setMinPreferred(0x06);  
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
-    Serial.printf("BLE Started: %s\n", deviceName);
+    BLEDevice::setMTU(512); 
+    Serial.printf("BLE Started: %s (MTU 512)\n", deviceName);
 }
 
 void BLEManager::tick() {
@@ -177,37 +179,94 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 return;
             }
 
-            JsonArray items = doc["items"];
-            if (items.isNull() || items.size() == 0) {
+            if (doc["recipe_id"].is<int>()) {
+                int rId = doc["recipe_id"];
+                if (rId >= 1 && rId <= activeRecipeCount) {
+                    remoteRecipe = recipes[rId - 1];
+                    Serial.printf("[DEBUG] Loading recipe '%s' from profile.\n", remoteRecipe.name.c_str());
+                } else {
+                    JsonDocument nak;
+                    nak["type"] = "ack";
+                    nak["command"] = "dispense";
+                    nak["status"] = "fail";
+                    nak["reason"] = "invalid_recipe_id";
+                    notifyStatus(nak);
+                    return;
+                }
+            } else if (doc["items"].is<JsonArray>()) {
+                JsonArray items = doc["items"];
+                if (items.isNull() || items.size() == 0) {
+                    JsonDocument nak;
+                    nak["type"] = "ack";
+                    nak["command"] = "dispense";
+                    nak["status"] = "fail";
+                    nak["reason"] = "empty_items";
+                    notifyStatus(nak);
+                    return;
+                }
+                remoteRecipe.name = "Remote Custom";
+                remoteRecipe.ingredientCount = items.size();
+                for (int i = 0; i < remoteRecipe.ingredientCount && i < 10; i++) {
+                    remoteRecipe.ingredients[i].spiceIndex = items[i]["slot"].as<int>() - 1;
+                    remoteRecipe.ingredients[i].quantityGrams = items[i]["grams"].as<float>();
+                }
+            } else {
                 JsonDocument nak;
                 nak["type"] = "ack";
                 nak["command"] = "dispense";
                 nak["status"] = "fail";
-                nak["reason"] = "empty_recipe";
+                nak["reason"] = "missing_data";
                 notifyStatus(nak);
                 return;
             }
 
-            remoteRecipe.name = "Remote Recipe";
-            remoteRecipe.ingredientCount = items.size();
-            for (int i = 0; i < remoteRecipe.ingredientCount && i < 10; i++) {
-                remoteRecipe.ingredients[i].spiceIndex = items[i]["slot"].as<int>() - 1;
-                remoteRecipe.ingredients[i].quantityGrams = items[i]["grams"].as<float>();
-            }
             remoteRequestTriggered = true;
-
             JsonDocument ack;
             ack["type"] = "ack";
             ack["command"] = "dispense";
             ack["status"] = "success";
             notifyStatus(ack);
         }
+        else if (strcmp(type, "sync_recipes") == 0) {
+            Serial.println("BLE: SYNC_RECIPES");
+            JsonArray recipesArr = doc["recipes"];
+            if (!recipesArr.isNull()) {
+                activeRecipeCount = 0;
+                for (JsonObject rObj : recipesArr) {
+                    if (activeRecipeCount >= MAX_RECIPES) break;
+                    recipes[activeRecipeCount].name = rObj["name"].as<String>();
+                    JsonArray ingredientsArr = rObj["ingredients"];
+                    recipes[activeRecipeCount].ingredientCount = 0;
+                    for (JsonObject iObj : ingredientsArr) {
+                        if (recipes[activeRecipeCount].ingredientCount >= 10) break;
+                        int idx = recipes[activeRecipeCount].ingredientCount;
+                        recipes[activeRecipeCount].ingredients[idx].spiceIndex = iObj["slot"].as<int>() - 1;
+                        recipes[activeRecipeCount].ingredients[idx].quantityGrams = iObj["grams"].as<float>();
+                        recipes[activeRecipeCount].ingredientCount++;
+                    }
+                    activeRecipeCount++;
+                }
+                saveProfile();
+                JsonDocument ack;
+                ack["type"] = "ack";
+                ack["command"] = "sync_recipes";
+                ack["status"] = "success";
+                ack["count"] = activeRecipeCount;
+                notifyStatus(ack);
+            } else {
+                JsonDocument nak;
+                nak["type"] = "ack";
+                nak["command"] = "sync_recipes";
+                nak["status"] = "fail";
+                notifyStatus(nak);
+            }
+        }
         else if (strcmp(type, "update_slot") == 0) {
             Serial.println("BLE: UPDATE_SLOT");
             int slot = doc["slot"];
             const char* name = doc["name"];
             if (slot >= 1 && slot <= NUM_SPICES && name) {
-                Serial.printf("Updating slot %d to %s\n", slot, name);
+                Serial.printf("[DEBUG] Updating slot %d to %s. Saving to active profile.\n", slot, name);
                 spices[slot - 1].name = String(name);
                 saveProfile();
                 
@@ -217,6 +276,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 ack["status"] = "success";
                 notifyStatus(ack);
             } else {
+                Serial.printf("[ERROR] Failed to update slot. Invalid parameters: slot=%d, name=%s\n", slot, name ? name : "null");
                 JsonDocument nak;
                 nak["type"] = "ack";
                 nak["command"] = "update_slot";
@@ -228,7 +288,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             Serial.println("BLE: REFILL");
             int slot = doc["slot"];
             if (slot >= 1 && slot <= NUM_SPICES) {
-                Serial.printf("Refilling slot %d\n", slot);
+                Serial.printf("[DEBUG] Refilling slot %d to 100%%. Saving to active profile.\n", slot);
                 spices[slot - 1].level = 100;
                 saveProfile();
                 
@@ -238,6 +298,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 ack["status"] = "success";
                 notifyStatus(ack);
             } else {
+                Serial.printf("[ERROR] Failed to refill slot. Invalid slot: %d\n", slot);
                 JsonDocument nak;
                 nak["type"] = "ack";
                 nak["command"] = "refill";

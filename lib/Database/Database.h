@@ -28,10 +28,12 @@ extern Spice spices[];
 extern Recipe recipes[MAX_RECIPES];
 extern int activeRecipeCount;
 extern String activeProfileUUID;
+extern bool isMachineConfigured;
 
 // --- PERSISTENCE METHODS ---
 bool initStorage();
-void loadDefaultProfile();
+void loadGlobalSpices();
+void saveGlobalSpices();
 bool loadProfile(String uuid);
 void saveProfile();
 void deleteProfile(String uuid);

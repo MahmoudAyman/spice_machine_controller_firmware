@@ -106,7 +106,13 @@ void setup() {
   if (!initStorage()) {
       Serial.println("Storage Initialization Failed!");
   }
-  loadDefaultProfile(); // Boot with the default profile for physical keypad
+  loadGlobalSpices();
+  // By default, no user profile is active. It will just use the last loaded one in RAM
+  // if disconnected, or defaultRecipes if brand new. We'll load default recipes manually here
+  // to ensure keypad has something if no BLE app has ever connected.
+  if (activeProfileUUID == "") {
+      activeRecipeCount = 12; // default 12 recipes
+  }
 
   initHardware(); 
   colorDetector.setCalibration(WHITE_R, WHITE_G, WHITE_B, BLACK_R, BLACK_G, BLACK_B);
@@ -400,16 +406,20 @@ void loop() {
     }
 
     case STATE_DISPENSING: {
-      updateLcd("Dispensing...", isRecipeMode ? String(currentRecipeGrams, 1) + "g" : String(manualQuantityInput) + " Tlp");
+      static bool logOnce = false;
+      if (!logOnce) {
+          updateLcd("Dispensing...", isRecipeMode ? String(currentRecipeGrams, 1) + "g" : String(manualQuantityInput) + " Tlp");
+          logOnce = true;
+      }
       
       if (!isDispensing()) {
-          float dispensed = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0); // Assume 5g per teaspoon
+          logOnce = false;
+          float dispensed = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0); 
           spices[pendingTargetTubeIndex].level -= (int)dispensed;
           if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
           
-          saveProfile(); // Commit to LittleFS
+          saveGlobalSpices(); 
           
-          // Trigger low spice alert if below 15%
           if (spices[pendingTargetTubeIndex].level < 15) {
               bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
           }

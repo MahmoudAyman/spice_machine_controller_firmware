@@ -5,6 +5,7 @@
 const int NUM_SPICES = 20;
 int activeRecipeCount = 12;
 String activeProfileUUID = "";
+bool isMachineConfigured = false;
 
 // The working arrays in RAM
 Spice spices[NUM_SPICES];
@@ -58,18 +59,73 @@ bool initStorage() {
     return true;
 }
 
-void loadDefaultProfile() {
-    activeProfileUUID = "";
-    for (int i = 0; i < NUM_SPICES; i++) spices[i] = defaultSpices[i];
-    activeRecipeCount = 12;
-    for (int i = 0; i < activeRecipeCount; i++) recipes[i] = defaultRecipes[i];
-    Serial.println("Loaded Factory Default Profile into RAM");
+void loadGlobalSpices() {
+    if (!LittleFS.exists("/global_spices.json")) {
+        Serial.println("No global spice config found. Using factory defaults. Machine unconfigured.");
+        isMachineConfigured = false;
+        for (int i = 0; i < NUM_SPICES; i++) spices[i] = defaultSpices[i];
+        return;
+    }
+
+    File file = LittleFS.open("/global_spices.json", "r");
+    if (!file) return;
+
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error) {
+        Serial.println("Failed to parse global_spices.json");
+        return;
+    }
+
+    isMachineConfigured = true;
+    JsonArray spicesArr = doc["spices"];
+    int i = 0;
+    for (JsonObject obj : spicesArr) {
+        if (i >= NUM_SPICES) break;
+        spices[i].name = obj["name"] | defaultSpices[i].name;
+        spices[i].level = obj["level"] | defaultSpices[i].level;
+        spices[i].r_val = defaultSpices[i].r_val; 
+        spices[i].g_val = defaultSpices[i].g_val;
+        spices[i].b_val = defaultSpices[i].b_val;
+        i++;
+    }
+    Serial.println("Global Spices loaded successfully.");
+}
+
+void saveGlobalSpices() {
+    File file = LittleFS.open("/global_spices.json", "w");
+    if (!file) {
+        Serial.println("Failed to open global_spices.json for writing");
+        return;
+    }
+
+    JsonDocument doc;
+    JsonArray spicesArr = doc["spices"].to<JsonArray>();
+    for (int i = 0; i < NUM_SPICES; i++) {
+        JsonObject obj = spicesArr.add<JsonObject>();
+        obj["name"] = spices[i].name;
+        obj["level"] = spices[i].level;
+    }
+
+    if (serializeJson(doc, file) == 0) {
+        Serial.println("Failed to write global spices to file");
+    } else {
+        isMachineConfigured = true; // Saving implies configuration occurred
+        Serial.println("Global Spices saved to LittleFS.");
+    }
+    file.close();
 }
 
 bool loadProfile(String uuid) {
     String path = "/profile_" + uuid + ".json";
+    activeProfileUUID = uuid; // Keep it active even if it's new
+    
     if (!LittleFS.exists(path)) {
-        Serial.printf("Profile for UUID %s not found.\n", uuid.c_str());
+        Serial.printf("Profile for UUID %s not found. Using default recipes.\n", uuid.c_str());
+        activeRecipeCount = 12;
+        for (int i = 0; i < activeRecipeCount; i++) recipes[i] = defaultRecipes[i];
         return false; // Does not exist
     }
 
@@ -85,22 +141,7 @@ bool loadProfile(String uuid) {
         return false;
     }
 
-    activeProfileUUID = uuid;
-
-    // Load Spices
-    JsonArray spicesArr = doc["spices"];
-    int i = 0;
-    for (JsonObject obj : spicesArr) {
-        if (i >= NUM_SPICES) break;
-        spices[i].name = obj["name"] | defaultSpices[i].name;
-        spices[i].level = obj["level"] | defaultSpices[i].level;
-        spices[i].r_val = defaultSpices[i].r_val; // Keep hardware RGB constants
-        spices[i].g_val = defaultSpices[i].g_val;
-        spices[i].b_val = defaultSpices[i].b_val;
-        i++;
-    }
-
-    // Load Recipes
+    // Load Recipes ONLY (Spices are now global)
     JsonArray recipesArr = doc["recipes"];
     activeRecipeCount = 0;
     for (JsonObject rObj : recipesArr) {
@@ -120,13 +161,13 @@ bool loadProfile(String uuid) {
         activeRecipeCount++;
     }
 
-    Serial.printf("Profile %s loaded successfully.\n", uuid.c_str());
+    Serial.printf("Profile %s recipes loaded successfully.\n", uuid.c_str());
     return true;
 }
 
 void saveProfile() {
     if (activeProfileUUID == "") {
-        Serial.println("Cannot save: No active profile set (using defaults).");
+        Serial.println("Cannot save recipes: No active profile set.");
         return;
     }
 
@@ -139,15 +180,7 @@ void saveProfile() {
 
     JsonDocument doc;
     
-    // Save Spices
-    JsonArray spicesArr = doc["spices"].to<JsonArray>();
-    for (int i = 0; i < NUM_SPICES; i++) {
-        JsonObject obj = spicesArr.add<JsonObject>();
-        obj["name"] = spices[i].name;
-        obj["level"] = spices[i].level;
-    }
-
-    // Save Recipes
+    // Save Recipes ONLY
     JsonArray recipesArr = doc["recipes"].to<JsonArray>();
     for (int i = 0; i < activeRecipeCount; i++) {
         JsonObject rObj = recipesArr.add<JsonObject>();
