@@ -11,21 +11,6 @@ static int servoPos = 0;
 
 // --- Hardware Initialization ---
 void initHardware() {
-  // LCD (SPI TFT ST7735)
-  if (simulationEnabled) {
-      Serial.println("[SIM] Initializing LCD...");
-  } else {
-      Serial.println("Initializing TFT LCD...");
-      pinMode(TFT_LED, OUTPUT);
-      digitalWrite(TFT_LED, HIGH); 
-      
-      display.initR(INITR_BLACKTAB); 
-      display.setRotation(1);        
-      display.fillScreen(ST77XX_BLACK);
-      display.setTextColor(ST77XX_WHITE);
-      display.setTextSize(2);
-  }
-
   // Stepper
   if (simulationEnabled) {
       Serial.println("[SIM] Initializing Stepper...");
@@ -74,19 +59,6 @@ void initHardware() {
   if (!simulationEnabled && VIBRATOR_PIN != -1) {
       pinMode(VIBRATOR_PIN, OUTPUT);
       digitalWrite(VIBRATOR_PIN, LOW); 
-  }
-}
-
-// --- Display Helper ---
-void updateLcd(String line1, String line2) {
-  if (simulationEnabled) {
-      Serial.printf("[LCD] %s | %s\n", line1.c_str(), line2.c_str());
-  } else {
-      display.fillScreen(ST77XX_BLACK);
-      display.setCursor(0, 20);
-      display.println(line1);
-      display.setCursor(0, 60);
-      display.println(line2);
   }
 }
 

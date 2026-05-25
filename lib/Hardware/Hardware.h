@@ -2,12 +2,10 @@
 #define HARDWARE_H
 
 #include <Arduino.h>
-#include <Adafruit_ST7735.h>
 #include <AccelStepper.h>
 #include <ESP32Servo.h>
 
 void initHardware();
-void updateLcd(String line1, String line2);
 String identifySpice(); // Blocking version
 void startIdentifySpice(); // Async version
 bool isIdentifying();

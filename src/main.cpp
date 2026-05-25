@@ -8,7 +8,7 @@
 #include "Hardware.h"
 
 // --- Global Object Definitions ---
-Adafruit_ST7735 display = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+LCDManager lcd;
 AccelStepper stepper = AccelStepper(AccelStepper::DRIVER, STEP_PIN, STEP_DIR_PIN);
 Servo dispenserServo;
 ColorDetector colorDetector = ColorDetector(CS_S0, CS_S1, CS_S2, CS_S3, CS_OUT);
@@ -115,6 +115,7 @@ void setup() {
 
   Serial.println("[INIT] Initializing Hardware Drivers...");
   initHardware(); 
+  lcd.begin(); 
   
   Serial.println("[INIT] Configuring Color Detector...");
   colorDetector.setCalibration(WHITE_R, WHITE_G, WHITE_B, BLACK_R, BLACK_G, BLACK_B);
@@ -123,7 +124,7 @@ void setup() {
   bleManager.begin("Spice Dispenser");
   
   Serial.println("[BOOT] Updating LCD...");
-  updateLcd("Spice Mixer", "Booting...");
+  lcd.updateLegacy("Spice Mixer", "Booting...");
   
   Serial.println("[BOOT] Entering STATE_BOOT...");
   changeState(STATE_BOOT); 
@@ -158,7 +159,8 @@ void loop() {
       isRecipeMode = false;
       isInitialCheck = false;
       emergencyStopHardware();
-      updateLcd("ABORTED", "Returning Home");
+      lcd.updateHeader("ABORTED", bleManager.isConnected());
+      lcd.updateContent("Returning Home", "");
       prepareReturnHome();
       return;
   }
@@ -173,7 +175,7 @@ void loop() {
           currentTubeIndex = 0;
           pendingTargetTubeIndex = 0;
           if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
-          updateLcd("System Check", "Starting...");
+          lcd.updateLegacy("System Check", "Starting...");
           changeState(STATE_SYSTEM_CHECK);
       }
       break;
@@ -181,7 +183,7 @@ void loop() {
     case STATE_SYSTEM_CHECK:
       if (STATE_TIMEOUT(simulationEnabled ? 50 : 500)) {
           Serial.printf("[BOOT] Scanning Tube %d/20...\n", currentTubeIndex + 1);
-          updateLcd("Scanning...", "Tube " + String(currentTubeIndex + 1));
+          lcd.updateLegacy("Scanning...", "Tube " + String(currentTubeIndex + 1));
           startIdentifySpice();
           changeState(STATE_IDENTIFYING);
       }
@@ -195,7 +197,7 @@ void loop() {
           currentRecipeIndex = -1; 
           currentIngredientIndex = 0;
           servingsCount = 1;
-          updateLcd("Remote Order", "Starting...");
+          lcd.updateLegacy("Remote Order", "Starting...");
           startRecipeIngredient();
           break;
       }
@@ -203,16 +205,16 @@ void loop() {
       char key = getButtonKey();
       if (key == 'U' || key == 'D') {
           currentSelection = (currentSelection == 0) ? 1 : 0;
-          updateLcd("MENU:", currentSelection == 0 ? "> 1. Recipes" : "> 2. Manual");
+          lcd.updateLegacy("MENU:", currentSelection == 0 ? "> 1. Recipes" : "> 2. Manual");
           delay(200); 
       } else if (key == 'N') {
           if (currentSelection == 0) {
               currentSelection = 0; 
-              updateLcd("Recipe:", recipes[0].name);
+              lcd.updateLegacy("Recipe:", recipes[0].name);
               changeState(STATE_RECIPE_SELECT);
           } else {
               currentSelection = 0; 
-              updateLcd("Tube:", String(currentSelection + 1));
+              lcd.updateLegacy("Tube:", String(currentSelection + 1));
               changeState(STATE_AWAITING_INPUT);
           }
           delay(200);
@@ -224,21 +226,21 @@ void loop() {
       char key = getButtonKey();
       if (key == 'U') {
           currentSelection = (currentSelection + 1) % activeRecipeCount;
-          updateLcd("Recipe:", recipes[currentSelection].name);
+          lcd.updateLegacy("Recipe:", recipes[currentSelection].name);
           delay(200);
       } else if (key == 'D') {
           currentSelection = (currentSelection - 1 + activeRecipeCount) % activeRecipeCount;
-          updateLcd("Recipe:", recipes[currentSelection].name);
+          lcd.updateLegacy("Recipe:", recipes[currentSelection].name);
           delay(200);
       } else if (key == 'N') {
           currentRecipeIndex = currentSelection;
           currentSelection = 1; 
-          updateLcd("Servings:", String(currentSelection));
+          lcd.updateLegacy("Servings:", String(currentSelection));
           changeState(STATE_RECIPE_SERVINGS_INPUT);
           delay(200);
       } else if (key == 'E') {
           currentSelection = 0;
-          updateLcd("1. Recipes", "2. Manual");
+          lcd.updateLegacy("1. Recipes", "2. Manual");
           changeState(STATE_MAIN_MENU);
           delay(200);
       }
@@ -249,22 +251,22 @@ void loop() {
       char key = getButtonKey();
       if (key == 'U') {
           currentSelection++;
-          updateLcd("Servings:", String(currentSelection));
+          lcd.updateLegacy("Servings:", String(currentSelection));
           delay(200);
       } else if (key == 'D') {
           if (currentSelection > 1) currentSelection--;
-          updateLcd("Servings:", String(currentSelection));
+          lcd.updateLegacy("Servings:", String(currentSelection));
           delay(200);
       } else if (key == 'N') {
            servingsCount = currentSelection;
            currentIngredientIndex = 0;    
            isRecipeMode = true;
-           updateLcd("Starting:", recipes[currentRecipeIndex].name);
+           lcd.updateLegacy("Starting:", recipes[currentRecipeIndex].name);
            startRecipeIngredient(); 
            delay(200);
       } else if (key == 'E') {
            currentSelection = currentRecipeIndex;
-           updateLcd("Recipe:", recipes[currentSelection].name);
+           lcd.updateLegacy("Recipe:", recipes[currentSelection].name);
            changeState(STATE_RECIPE_SELECT);
            delay(200);
       }
@@ -275,21 +277,21 @@ void loop() {
       char key = getButtonKey();
       if (key == 'U') {
           currentSelection = (currentSelection + 1) % TOTAL_TUBES;
-          updateLcd("Tube:", String(currentSelection + 1));
+          lcd.updateLegacy("Tube:", String(currentSelection + 1));
           delay(200);
       } else if (key == 'D') {
           currentSelection = (currentSelection - 1 + TOTAL_TUBES) % TOTAL_TUBES;
-          updateLcd("Tube:", String(currentSelection + 1));
+          lcd.updateLegacy("Tube:", String(currentSelection + 1));
           delay(200);
       } else if (key == 'N') {
           pendingTargetTubeIndex = currentSelection;
           currentSelection = 1; 
-          updateLcd("Qty (Tlp):", String(currentSelection));
+          lcd.updateLegacy("Qty (Tlp):", String(currentSelection));
           changeState(STATE_AWAITING_QUANTITY_INPUT);
           delay(200);
       } else if (key == 'E') {
           currentSelection = 1; 
-          updateLcd("1. Recipes", "2. Manual");
+          lcd.updateLegacy("1. Recipes", "2. Manual");
           changeState(STATE_MAIN_MENU);
           delay(200);
       }
@@ -300,11 +302,11 @@ void loop() {
       char key = getButtonKey();
       if (key == 'U') {
           currentSelection++;
-          updateLcd("Qty (Tlp):", String(currentSelection));
+          lcd.updateLegacy("Qty (Tlp):", String(currentSelection));
           delay(200);
       } else if (key == 'D') {
           if (currentSelection > 1) currentSelection--;
-          updateLcd("Qty (Tlp):", String(currentSelection));
+          lcd.updateLegacy("Qty (Tlp):", String(currentSelection));
           delay(200);
       } else if (key == 'N') {
               manualQuantityInput = currentSelection;
@@ -316,20 +318,20 @@ void loop() {
               
               if (tubesToMove > 0) {
                 Serial.printf("[MANUAL] Rotating %d tubes to target %d...\n", tubesToMove, pendingTargetTubeIndex + 1);
-                updateLcd("Rotating...", "");
+                lcd.updateLegacy("Rotating...", "");
                 if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
                 stepper.move(tubesToMove * STEPS_PER_TUBE);
                 currentTubeIndex = pendingTargetTubeIndex; 
                 changeState(STATE_ROTATING_TO_TARGET);
               } else {
                  Serial.println("[MANUAL] Already at target tube.");
-                 updateLcd("Arrived", "Stabilizing...");
+                 lcd.updateLegacy("Arrived", "Stabilizing...");
                  changeState(STATE_IDENTIFYING); 
               }
               delay(200);
       } else if (key == 'E') {
           currentSelection = pendingTargetTubeIndex;
-          updateLcd("Tube:", String(currentSelection + 1));
+          lcd.updateLegacy("Tube:", String(currentSelection + 1));
           changeState(STATE_AWAITING_INPUT);
           delay(200);
       }
@@ -363,7 +365,7 @@ void loop() {
         Serial.printf("[SENSOR] Expected: %s | Detected: %s\n", expectedSpice.c_str(), detectedSpice.c_str());
 
         if (detectedSpice == expectedSpice) {
-           updateLcd("Correct:", detectedSpice);
+           lcd.updateLegacy("Correct:", detectedSpice);
            if (isInitialCheck) {
                if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) {
                    currentTubeIndex++;
@@ -373,7 +375,7 @@ void loop() {
                        changeState(STATE_ROTATING_TO_TARGET);
                    } else {
                        Serial.println("[BOOT] Initial Check Complete. All tubes verified.");
-                       updateLcd("Check Done!", "Returning...");
+                       lcd.updateLegacy("Check Done!", "Returning...");
                        isInitialCheck = false;
                        isRecipeMode = false;
                        prepareReturnHome();
@@ -384,11 +386,11 @@ void loop() {
            }
         } else {
            Serial.printf("[ERROR] Wrong Spice! Found %s at slot %d\n", detectedSpice.c_str(), pendingTargetTubeIndex + 1);
-           updateLcd("WRONG HERB!", "Found: " + detectedSpice);
+           lcd.updateLegacy("WRONG HERB!", "Found: " + detectedSpice);
            bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1);
            if (STATE_TIMEOUT(3000)) {
                if (isInitialCheck) {
-                   updateLcd("Fix & Press N", "Tube " + String(currentTubeIndex + 1));
+                   lcd.updateLegacy("Fix & Press N", "Tube " + String(currentTubeIndex + 1));
                    changeState(STATE_EMPTY_RETRY); 
                } else {
                    prepareReturnHome();
@@ -404,12 +406,12 @@ void loop() {
           int laserState = simulationEnabled ? HIGH : digitalRead(LASER_RX_PIN);
           if (laserState == HIGH) { 
             Serial.println("[SENSOR] Fill sensor: FILLED.");
-            updateLcd("Status:", "Tube Filled");
+            lcd.updateLegacy("Status:", "Tube Filled");
             startDispense(targetDispenseCycles);
             changeState(STATE_DISPENSING);
           } else {
             Serial.println("[SENSOR] Fill sensor: EMPTY!");
-            updateLcd("TUBE EMPTY!", "N:Retry E:Exit");
+            lcd.updateLegacy("TUBE EMPTY!", "N:Retry E:Exit");
             bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
             changeState(STATE_EMPTY_RETRY);
           }
@@ -436,7 +438,7 @@ void loop() {
     case STATE_DISPENSING: {
       static bool logOnce = false;
       if (!logOnce) {
-          updateLcd("Dispensing...", isRecipeMode ? String(currentRecipeGrams, 1) + "g" : String(manualQuantityInput) + " Tlp");
+          lcd.updateLegacy("Dispensing...", isRecipeMode ? String(currentRecipeGrams, 1) + "g" : String(manualQuantityInput) + " Tlp");
           logOnce = true;
       }
       
@@ -461,11 +463,11 @@ void loop() {
                startRecipeIngredient();
             } else {
                Serial.println("[RECIPE] All ingredients dispensed.");
-               updateLcd("Recipe Done!", "Returning...");
+               lcd.updateLegacy("Recipe Done!", "Returning...");
                prepareReturnHome();
             }
           } else {
-            updateLcd("Done!", "Returning...");
+            lcd.updateLegacy("Done!", "Returning...");
             prepareReturnHome(); 
           }
       }
@@ -477,7 +479,7 @@ void loop() {
           if (STATE_TIMEOUT(100)) {
               if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
               isRecipeMode = false;
-              updateLcd("1. Recipes", "2. Manual");
+              lcd.updateLegacy("1. Recipes", "2. Manual");
               changeState(STATE_MAIN_MENU);
           }
       } else {
@@ -487,7 +489,7 @@ void loop() {
                 Serial.println("[MOTOR] Returned home.");
                 if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
                 isRecipeMode = false;
-                updateLcd("1. Recipes", "2. Manual");
+                lcd.updateLegacy("1. Recipes", "2. Manual");
                 changeState(STATE_MAIN_MENU);
             }
           }
@@ -514,7 +516,7 @@ void startRecipeIngredient() {
    Serial.printf("[RECIPE] Target Tube: %d | Grams: %.1fg | Cycles: %d\n", 
        pendingTargetTubeIndex + 1, currentRecipeGrams, targetDispenseCycles);
 
-   updateLcd("Next:", spices[pendingTargetTubeIndex].name);
+   lcd.updateLegacy("Next:", spices[pendingTargetTubeIndex].name);
 
    int tubesToMove = (pendingTargetTubeIndex >= currentTubeIndex) ? 
                      (pendingTargetTubeIndex - currentTubeIndex) : 
@@ -536,7 +538,7 @@ void startRecipeIngredient() {
 void prepareReturnHome() {
     if (currentTubeIndex != 0) { 
         Serial.printf("[MOTOR] Returning home from Tube %d...\n", currentTubeIndex + 1);
-        updateLcd("Returning to", "Tube 1");
+        lcd.updateLegacy("Returning to", "Tube 1");
         int tubesToMoveHome = TOTAL_TUBES - currentTubeIndex; 
         if (!simulationEnabled) {
             if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
@@ -546,7 +548,7 @@ void prepareReturnHome() {
         changeState(STATE_RETURNING_HOME);
     } else { 
         isRecipeMode = false;
-        updateLcd("1. Recipes", "2. Manual");
+        lcd.updateLegacy("1. Recipes", "2. Manual");
         changeState(STATE_MAIN_MENU);
         if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
     }

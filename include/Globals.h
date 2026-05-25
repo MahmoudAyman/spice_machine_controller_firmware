@@ -2,13 +2,13 @@
 #define GLOBALS_H
 
 #include <Arduino.h>
-#include <Adafruit_ST7735.h>
 #include <AccelStepper.h>
 #include <ESP32Servo.h>
 #include "Configuration.h"
 #include "Database.h"
 #include "../lib/ColorDetector/ColorDetector.h"
 #include "../lib/BLEManager/BLEManager.h"
+#include "../lib/LCDManager/LCDManager.h"
 
 // --- State Machine Enum ---
 enum SystemState {
@@ -30,7 +30,7 @@ enum SystemState {
 };
 
 // Expose objects to all files (Back to Instances)
-extern Adafruit_ST7735 display;
+extern LCDManager lcd;
 extern AccelStepper stepper;
 extern Servo dispenserServo;
 extern ColorDetector colorDetector;
