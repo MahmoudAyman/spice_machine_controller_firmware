@@ -98,10 +98,6 @@ void LCDManager::_drawBLEIcon(bool connected) {
     _tft.drawTriangle(290, 15, 300, 25, 310, 15, color);
 }
 
-void LCDManager::updateLegacy(String line1, String line2) {
-    updateContent(line1, line2);
-}
-
 void LCDManager::runDiagnostic() {
     Serial.println("[LCD] Running Diagnostic (240x320)...");
     _tft.fillScreen(ILI9341_RED);

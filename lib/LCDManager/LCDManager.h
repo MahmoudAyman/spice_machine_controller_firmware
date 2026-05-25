@@ -23,9 +23,6 @@ public:
     void runDiagnostic();
     void setBacklight(bool on);
 
-    // Legacy Support (to ease refactoring)
-    void updateLegacy(String line1, String line2);
-
 private:
     Adafruit_ILI9341 _tft;
     bool _isInitialized;
