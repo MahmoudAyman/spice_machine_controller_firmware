@@ -4,37 +4,41 @@
 #include <Arduino.h>
 
 // --- System Configuration ---
-#define SIMULATION_MODE 1  // Set to 1 to test without physical hardware connected
+#define SIMULATION_MODE 1  // Set to 0 for actual hardware
 
-// --- Pin Definitions ---
-// Display
-#define I2C_SDA       21
-#define I2C_SCL       22
-#define SCREEN_WIDTH  128
-#define SCREEN_HEIGHT 64
+// --- Pin Definitions (Custom PCB V1.0) ---
 
-// Keypad
-const byte ROWS = 5;
-const byte COLS = 4;
-const byte rowPins[ROWS] = {32, 33, 25, 26, 27};
-const byte colPins[COLS] = {14, 12, 13, 4};
+// TFT SPI LCD (ST7735 or similar)
+#define TFT_CS        5
+#define TFT_SCLK      18
+#define TFT_MOSI      23
+#define TFT_DC        27
+#define TFT_RST       33
+#define TFT_LED       25
 
-// Stepper
-#define STEP_PIN      19
-#define DIR_PIN       23
-#define ENABLE_PIN    18
+// Stepper Motor (A4988/DRV8825)
+#define STEP_ENABLE_PIN -1   // CRITICAL: GPIO 19 is tied to ESP32 EN pin on PCB. MUST NOT BE USED.
+#define STEP_PIN        21
+#define STEP_DIR_PIN    22
 
-// Sensors
+// Discrete Buttons (5 buttons instead of Keypad)
+#define BTN_1         12
+#define BTN_2         13
+#define BTN_3         14
+#define BTN_4         26
+#define BTN_5         32
+
+// Color Sensor (TCS3200)
 #define CS_S0         17
 #define CS_S1         16
 #define CS_S2         2
-#define CS_S3         5
+#define CS_S3         4
 #define CS_OUT        34
-#define LASER_RX_PIN  35 
 
-// Servo & Vibrator
+// Other Peripherals
+#define LASER_RX_PIN  35 
 #define SERVO_PIN     15
-#define VIBRATOR_PIN  1   // NOTE: GPIO 1 is Serial TX. Using it for hardware will block Serial. 
+#define VIBRATOR_PIN  -1  // Currently unused/disabled
 
 // --- Constants ---
 #define STEPS_PER_REVOLUTION 820
@@ -48,7 +52,7 @@ const long MATCH_THRESHOLD = 150;
 
 // Dispensing Calibration
 const float GRAMS_PER_CYCLE = 0.2;
-const int CYCLES_PER_THEELEPEL = 10; // 1 Tlp = 2g = 10 cycles
+const int CYCLES_PER_THEELEPEL = 10; 
 
 // Color Sensor Calibration (Legacy)
 const int WHITE_R = 25;

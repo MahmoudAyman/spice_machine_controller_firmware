@@ -2,10 +2,9 @@
 #define GLOBALS_H
 
 #include <Arduino.h>
-#include <Adafruit_SSD1306.h>
+#include <Adafruit_ST7735.h>
 #include <AccelStepper.h>
 #include <ESP32Servo.h>
-#include <Keypad.h>
 #include "Configuration.h"
 #include "Database.h"
 #include "../lib/ColorDetector/ColorDetector.h"
@@ -30,11 +29,10 @@ enum SystemState {
   STATE_ERROR_RETURN
 };
 
-// Expose objects to all files
-extern Adafruit_SSD1306 display;
+// Expose objects to all files (Back to Instances)
+extern Adafruit_ST7735 display;
 extern AccelStepper stepper;
 extern Servo dispenserServo;
-extern Keypad customKeypad;
 extern ColorDetector colorDetector;
 extern BLEManager bleManager;
 
@@ -46,8 +44,10 @@ extern bool abortTriggered;
 extern bool remoteRequestTriggered;
 extern Recipe remoteRecipe;
 extern int pendingTargetTubeIndex;
+extern int currentSelection; 
 
 // Function Prototypes
 void sendBleStatus();
+char getButtonKey();
 
 #endif
