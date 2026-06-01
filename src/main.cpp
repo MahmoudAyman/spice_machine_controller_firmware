@@ -215,17 +215,20 @@ void loop() {
     case STATE_SYSTEM_CHECK:
       if (STATE_TIMEOUT(simulationEnabled ? 50 : 500)) {
           Serial.printf("[BOOT] Scanning Tube %d/20...\n", currentTubeIndex + 1);
-          int totalProgress = (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100);
           
           // 1. Static Header
           lcd.updateHeader("SYSTEM CHECK...", bleManager.getBleStatus());
           
-          // 2. Incremental Progress Bar at BOTTOM (y=160)
-          lcd.drawProgressBar(totalProgress, 160); 
+          // 2. Setup Layout or Update Surgically
+          if (currentTubeIndex == 0) {
+              lcd.updateContent(spices[currentTubeIndex].name, "Scanning...");
+              lcd.drawProgressBar(0, 160, true); 
+          } else {
+              lcd.updateSpiceName(spices[currentTubeIndex].name);
+              lcd.updateTask("Scanning...");
+              lcd.updateDetail("");
+          }
 
-          // 3. Middle Content (Name -> Status)
-          lcd.updateContent(spices[currentTubeIndex].name, "Scanning..."); 
-          
           startIdentifySpice();
           changeState(STATE_IDENTIFYING);
       }
@@ -240,9 +243,13 @@ void loop() {
 
         if (detectedSpice == expectedSpice) {
            if (isInitialCheck) {
-               lcd.updateContent(detectedSpice, "VERIFIED");
+               // Surgical updates for boot
+               lcd.updateSpiceName(detectedSpice);
+               lcd.updateTask("VERIFIED");
+               
                int nextProgress = (int)(((float)(currentTubeIndex + 1) / TOTAL_TUBES) * 100);
                lcd.drawProgressBar(nextProgress, 160);
+               
                delay(100);
 
                if (STATE_TIMEOUT(simulationEnabled ? 50 : 800)) {
@@ -253,7 +260,8 @@ void loop() {
                        changeState(STATE_ROTATING_TO_TARGET);
                    } else {
                        Serial.println("[BOOT] Initial Check Complete. All tubes verified.");
-                       lcd.updateContent("System Ready", "All Slots OK");
+                       lcd.updateSpiceName("System Ready");
+                       lcd.updateTask("All Slots OK");
                        lcd.drawProgressBar(100, 160);
                        delay(500);
                        isInitialCheck = false;
