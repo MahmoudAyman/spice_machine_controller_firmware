@@ -3,7 +3,8 @@
 LCDManager::LCDManager() : 
     _tft(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST),
     _isInitialized(false),
-    _lastBleStatus(-1) {}
+    _lastBleStatus(-1),
+    _lastProgress(-1) {}
 
 void LCDManager::begin() {
     Serial.println("[LCD] Initializing ILI9341 (Software SPI)...");
@@ -25,6 +26,7 @@ void LCDManager::begin() {
     _lastRight = "__NONE__";
     _lastSelectedIndex = -1;
     _lastView = "";
+    _lastProgress = -1;
 
     updateHeader("Spice Mixer", 1); // Default to Advertising
 }
@@ -32,6 +34,7 @@ void LCDManager::begin() {
 void LCDManager::clear() {
     if (!_isInitialized) return;
     _tft.fillScreen(ILI9341_BLACK);
+    _lastProgress = -1;
 }
 
 void LCDManager::setBacklight(bool on) {
@@ -94,6 +97,7 @@ void LCDManager::updateContent(String line1, String line2) {
 
     // Clear content area (30 to 180)
     _tft.fillRect(0, 30, 320, 150, ILI9341_BLACK);
+    _lastProgress = -1; 
     
     _tft.setTextColor(ILI9341_WHITE);
     _tft.setTextSize(3);
@@ -106,17 +110,30 @@ void LCDManager::updateContent(String line1, String line2) {
     }
 }
 
-void LCDManager::drawProgressBar(int progress, int y) {
+void LCDManager::drawProgressBar(int progress, int y, bool forceRedraw) {
     if (!_isInitialized) return;
     if (progress < 0) progress = 0;
     if (progress > 100) progress = 100;
 
     int width = 280;
-    int height = 15;
+    int height = 20;
     int x = 20;
 
-    _tft.drawRect(x, y, width, height, ILI9341_WHITE);
-    _tft.fillRect(x + 2, y + 2, (width - 4) * progress / 100, height - 4, ILI9341_GREEN);
+    if (forceRedraw || _lastProgress == -1 || progress < _lastProgress) {
+        _tft.drawRect(x, y, width, height, ILI9341_WHITE);
+        _tft.fillRect(x + 2, y + 2, width - 4, height - 4, ILI9341_BLACK);
+        if (progress > 0) {
+            _tft.fillRect(x + 2, y + 2, (width - 4) * progress / 100, height - 4, ILI9341_GREEN);
+        }
+    } else if (progress > _lastProgress) {
+        int startX = x + 2 + ((width - 4) * _lastProgress / 100);
+        int endX = x + 2 + ((width - 4) * progress / 100);
+        int drawW = endX - startX;
+        if (drawW > 0) {
+            _tft.fillRect(startX, y + 2, drawW, height - 4, ILI9341_GREEN);
+        }
+    }
+    _lastProgress = progress;
 }
 
 void LCDManager::_drawActionBar(String left, String ok, String right) {
@@ -169,15 +186,13 @@ void LCDManager::showMenu(String title, const char* options[], int count, int se
     int itemHeight = 30;
     int startY = 40;
     
-    // Calculate page: 0-4 is Page 0, 5-9 is Page 1, etc.
     int currentPage = selectedIndex / itemsPerPage;
     int scrollOffset = currentPage * itemsPerPage;
 
     static int lastPage = -1;
-    if (viewChanged) lastPage = -1; // Reset on view change
+    if (viewChanged) lastPage = -1;
     
     if (viewChanged || currentPage != lastPage) {
-        // Full Redraw of the current page
         _tft.fillRect(0, 30, 320, 170, ILI9341_BLACK);
         for (int i = 0; i < itemsPerPage; i++) {
             int optIdx = scrollOffset + i;
@@ -195,7 +210,6 @@ void LCDManager::showMenu(String title, const char* options[], int count, int se
             _tft.print(options[optIdx]);
         }
         
-        // Draw Page Indicator if list is long
         if (count > itemsPerPage) {
             int totalPages = (count + itemsPerPage - 1) / itemsPerPage;
             String pg = "Pg " + String(currentPage + 1) + "/" + String(totalPages);
@@ -205,11 +219,9 @@ void LCDManager::showMenu(String title, const char* options[], int count, int se
             _tft.print(pg);
         }
     } else if (selectedIndex != _lastSelectedIndex) {
-        // Fast Partial Redraw within the same page
         int oldIdxInPage = _lastSelectedIndex % itemsPerPage;
         int newIdxInPage = selectedIndex % itemsPerPage;
 
-        // Clear old highlight
         int oldY = startY + (oldIdxInPage * itemHeight);
         _tft.fillRect(5, oldY - 5, 310, itemHeight, ILI9341_BLACK);
         _tft.setTextColor(ILI9341_LIGHTGREY);
@@ -217,7 +229,6 @@ void LCDManager::showMenu(String title, const char* options[], int count, int se
         _tft.setCursor(20, oldY);
         _tft.print(options[_lastSelectedIndex]);
 
-        // Draw new highlight
         int newY = startY + (newIdxInPage * itemHeight);
         _tft.fillRect(5, newY - 5, 310, itemHeight, ILI9341_ORANGE);
         _tft.setTextColor(ILI9341_WHITE);
@@ -251,7 +262,6 @@ void LCDManager::showNumericSelection(String title, String value, String unit, S
     _tft.setCursor(160 - (w / 2), 140);
     _tft.print(unit);
 
-    // Draw arrows
     _tft.setTextColor(ILI9341_YELLOW);
     _tft.setTextSize(3);
     _tft.setCursor(30, 80);
@@ -274,7 +284,7 @@ void LCDManager::showOperationView(String title, String spiceName, int progress,
     _tft.setCursor(160 - (w/2), 60);
     _tft.print(spiceName);
 
-    drawProgressBar(progress, 110);
+    drawProgressBar(progress, 110, true);
 
     _tft.setTextColor(ILI9341_WHITE);
     _tft.setTextSize(2);

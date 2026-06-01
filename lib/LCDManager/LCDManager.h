@@ -24,7 +24,7 @@ public:
     void updateHeader(String title, int bleStatus); // 0: Disconnected, 1: Advertising, 2: Connected
     void updateStatus(String status, uint16_t color = ILI9341_WHITE);
     void updateContent(String line1, String line2 = "");
-    void drawProgressBar(int progress, int y = 140); // Moved y up for refactor
+    void drawProgressBar(int progress, int y = 140, bool forceRedraw = false); 
     
     // Hardware Diagnostics
     void runDiagnostic();
@@ -41,6 +41,7 @@ private:
     String _lastHeaderTitle;
     String _lastStatus;
     int _lastBleStatus; // 0, 1, 2
+    int _lastProgress;  // Track for incremental drawing
     
     // State tracking for partial redraws
     int _lastSelectedIndex;

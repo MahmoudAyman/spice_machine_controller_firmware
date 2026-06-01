@@ -215,12 +215,83 @@ void loop() {
     case STATE_SYSTEM_CHECK:
       if (STATE_TIMEOUT(simulationEnabled ? 50 : 500)) {
           Serial.printf("[BOOT] Scanning Tube %d/20...\n", currentTubeIndex + 1);
-          lcd.showOperationView("SYSTEM CHECK", "Scanning Tube " + String(currentTubeIndex + 1), 
-                               (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100), "Verifying Slots", "Skip");
+          int totalProgress = (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100);
+          
+          // 1. Static Header
+          lcd.updateHeader("SYSTEM CHECK...", bleManager.getBleStatus());
+          
+          // 2. Incremental Progress Bar at BOTTOM (y=160)
+          lcd.drawProgressBar(totalProgress, 160); 
+
+          // 3. Middle Content (Name -> Status)
+          // We use targeted updates to avoid clearing the whole content area
+          lcd.updateContent(spices[currentTubeIndex].name, "Scanning..."); 
+          
           startIdentifySpice();
           changeState(STATE_IDENTIFYING);
       }
       break;
+
+    case STATE_IDENTIFYING: {
+      if (!isIdentifying()) {
+        String detectedSpice = getIdentifiedSpice();
+        String expectedSpice = spices[pendingTargetTubeIndex].name;
+        
+        Serial.printf("[SENSOR] Expected: %s | Detected: %s\n", expectedSpice.c_str(), detectedSpice.c_str());
+
+        if (detectedSpice == expectedSpice) {
+           if (isInitialCheck) {
+               // Update Status and Bar incrementally
+               lcd.updateContent(detectedSpice, "VERIFIED");
+               int nextProgress = (int)(((float)(currentTubeIndex + 1) / TOTAL_TUBES) * 100);
+               lcd.drawProgressBar(nextProgress, 160);
+               
+               // Smoothing delay for "VERIFIED" visibility
+               delay(100);
+
+               if (STATE_TIMEOUT(simulationEnabled ? 50 : 800)) {
+                   currentTubeIndex++;
+                   if (currentTubeIndex < TOTAL_TUBES) {
+                       pendingTargetTubeIndex = currentTubeIndex;
+                       if (!simulationEnabled) stepper.move(STEPS_PER_TUBE);
+                       changeState(STATE_ROTATING_TO_TARGET);
+                   } else {
+                       Serial.println("[BOOT] Initial Check Complete. All tubes verified.");
+                       lcd.updateContent("System Ready", "All Slots OK");
+                       lcd.drawProgressBar(100, 160);
+                       delay(500);
+                       isInitialCheck = false;
+                       isRecipeMode = false;
+                       prepareReturnHome();
+                   }
+               }
+           } else {
+               lcd.showOperationView("IDENTIFIED", detectedSpice, 100, "Match Confirmed", "");
+               changeState(STATE_CHECKING_FILL); 
+           }
+        } else {
+           Serial.printf("[ERROR] Wrong Spice! Found %s at slot %d\n", detectedSpice.c_str(), pendingTargetTubeIndex + 1);
+           if (isInitialCheck) {
+                lcd.updateContent("MISMATCH!", "Found: " + detectedSpice);
+                lcd.updateStatus("Expected: " + expectedSpice, ILI9341_RED);
+           } else {
+                lcd.showOperationView("MISMATCH!", "Found: " + detectedSpice, 0, "ERROR: WRONG SPICE", "Exit");
+           }
+           bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1);
+           if (STATE_TIMEOUT(3000)) {
+               if (isInitialCheck) {
+                   changeState(STATE_EMPTY_RETRY); 
+               } else {
+                   prepareReturnHome();
+               }
+           }
+        }
+      } else if (!isInitialCheck) {
+          // Manual mode identifying screen (non-boot)
+          lcd.showOperationView("IDENTIFYING", spices[pendingTargetTubeIndex].name, 50, "Scanning Label...", "Abort");
+      }
+      break;
+    }
 
     case STATE_MAIN_MENU: {
       if (remoteRequestTriggered) {
@@ -376,52 +447,6 @@ void loop() {
                 changeState(STATE_IDENTIFYING);
             }
           }
-      }
-      break;
-    }
-
-    case STATE_IDENTIFYING: {
-      if (!isIdentifying()) {
-        String detectedSpice = getIdentifiedSpice();
-        String expectedSpice = spices[pendingTargetTubeIndex].name;
-        
-        Serial.printf("[SENSOR] Expected: %s | Detected: %s\n", expectedSpice.c_str(), detectedSpice.c_str());
-
-        if (detectedSpice == expectedSpice) {
-           lcd.showOperationView("IDENTIFIED", detectedSpice, 100, "Match Confirmed", "");
-           if (isInitialCheck) {
-               if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) {
-                   currentTubeIndex++;
-                   if (currentTubeIndex < TOTAL_TUBES) {
-                       pendingTargetTubeIndex = currentTubeIndex;
-                       if (!simulationEnabled) stepper.move(STEPS_PER_TUBE);
-                       changeState(STATE_ROTATING_TO_TARGET);
-                   } else {
-                       Serial.println("[BOOT] Initial Check Complete. All tubes verified.");
-                       lcd.showOperationView("SYSTEM READY", "Tubes Verified", 100, "Returning Home", "");
-                       isInitialCheck = false;
-                       isRecipeMode = false;
-                       prepareReturnHome();
-                   }
-               }
-           } else {
-               changeState(STATE_CHECKING_FILL); 
-           }
-        } else {
-           Serial.printf("[ERROR] Wrong Spice! Found %s at slot %d\n", detectedSpice.c_str(), pendingTargetTubeIndex + 1);
-           lcd.showOperationView("MISMATCH!", "Found: " + detectedSpice, 0, "ERROR: WRONG SPICE", "Exit");
-           bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1);
-           if (STATE_TIMEOUT(3000)) {
-               if (isInitialCheck) {
-                   changeState(STATE_EMPTY_RETRY); 
-               } else {
-                   prepareReturnHome();
-               }
-           }
-        }
-      } else {
-          // Periodically update identifying screen
-          lcd.showOperationView("IDENTIFYING", spices[pendingTargetTubeIndex].name, 50, "Scanning Label...", "Abort");
       }
       break;
     }
