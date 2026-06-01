@@ -180,6 +180,10 @@ void LCDManager::drawProgressBar(int progress, int y, bool forceRedraw) {
     _lastProgress = progress;
 }
 
+void LCDManager::setActionBar(String left, String ok, String right) {
+    _drawActionBar(left, ok, right);
+}
+
 void LCDManager::_drawActionBar(String left, String ok, String right) {
     if (left == _lastLeft && ok == _lastOk && right == _lastRight) return;
 

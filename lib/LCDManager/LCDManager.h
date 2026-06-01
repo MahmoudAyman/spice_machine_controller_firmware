@@ -27,6 +27,7 @@ public:
     void updateSpiceName(String name); // Line 1 (Surgical)
     void updateTask(String task);   // Line 2 (Surgical)
     void updateDetail(String detail); // Line 3 (Surgical)
+    void setActionBar(String left, String ok = "", String right = "");
     void drawProgressBar(int progress, int y = 140, bool forceRedraw = false); 
     
     // Hardware Diagnostics

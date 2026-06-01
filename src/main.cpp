@@ -197,6 +197,15 @@ void loop() {
       lastKey = rawKey;
   }
 
+  // Handle Physical Abort (Left Button)
+  if (key == 'L' && !isInitialCheck) {
+      if (currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET || 
+          currentState == STATE_IDENTIFYING || currentState == STATE_CHECKING_FILL) {
+          Serial.println("[EVENT] Physical Abort Triggered!");
+          abortTriggered = true;
+      }
+  }
+
   switch (currentState) {
     case STATE_BOOT:
       if (STATE_TIMEOUT(2000)) {
@@ -594,6 +603,7 @@ void startRecipeIngredient() {
    if (!isInitialCheck) {
        // Enhanced Stability: Use surgical updates to keep progress bar drawn
        lcd.updateHeader("DISPENSING...", bleManager.getBleStatus());
+       lcd.setActionBar("Abort"); // Ensure button is visible
        if (currentIngredientIndex == 0) {
            // First ingredient: Full setup
            lcd.updateContent(spices[pendingTargetTubeIndex].name, "PREPARING");
