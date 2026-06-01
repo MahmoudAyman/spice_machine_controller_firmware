@@ -21,7 +21,14 @@
 #define STEP_PIN        21
 #define STEP_DIR_PIN    22
 
-// Discrete Buttons (5 buttons instead of Keypad)
+// Discrete Buttons (Verified Hardware Mapping)
+#define BTN_UP        26 // BTN_4
+#define BTN_DOWN      14 // BTN_3
+#define BTN_LEFT      13 // BTN_2
+#define BTN_RIGHT     12 // BTN_1
+#define BTN_OK        32 // BTN_5
+
+// Legacy compatibility for Hardware.cpp initialization
 #define BTN_1         12
 #define BTN_2         13
 #define BTN_3         14

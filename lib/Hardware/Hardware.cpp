@@ -37,14 +37,12 @@ void initHardware() {
   }
 
   // Buttons (Discrete Pins)
-  if (!simulationEnabled) {
-      Serial.println("Initializing Buttons...");
-      pinMode(BTN_1, INPUT_PULLUP);
-      pinMode(BTN_2, INPUT_PULLUP);
-      pinMode(BTN_3, INPUT_PULLUP);
-      pinMode(BTN_4, INPUT_PULLUP);
-      pinMode(BTN_5, INPUT_PULLUP);
-  }
+  Serial.println("Initializing Buttons...");
+  pinMode(BTN_UP, INPUT_PULLUP);
+  pinMode(BTN_DOWN, INPUT_PULLUP);
+  pinMode(BTN_LEFT, INPUT_PULLUP);
+  pinMode(BTN_RIGHT, INPUT_PULLUP);
+  pinMode(BTN_OK, INPUT_PULLUP);
 
   // Servo
   if (simulationEnabled) {
@@ -64,13 +62,11 @@ void initHardware() {
 
 // Button Mapping
 char getButtonKey() {
-    if (simulationEnabled) return 0;
-    
-    if (digitalRead(BTN_1) == LOW) return 'U'; 
-    if (digitalRead(BTN_2) == LOW) return 'D'; 
-    if (digitalRead(BTN_3) == LOW) return 'N'; 
-    if (digitalRead(BTN_4) == LOW) return 'E'; 
-    if (digitalRead(BTN_5) == LOW) return 'A'; 
+    if (digitalRead(BTN_UP) == LOW)    return 'U'; // GPIO 26
+    if (digitalRead(BTN_DOWN) == LOW)  return 'D'; // GPIO 14
+    if (digitalRead(BTN_LEFT) == LOW)  return 'L'; // GPIO 13
+    if (digitalRead(BTN_RIGHT) == LOW) return 'R'; // GPIO 12
+    if (digitalRead(BTN_OK) == LOW)    return 'N'; // GPIO 32
     
     return 0;
 }
