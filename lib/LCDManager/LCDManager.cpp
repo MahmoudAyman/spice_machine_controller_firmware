@@ -285,33 +285,59 @@ void LCDManager::showMenu(String title, const char* options[], int count, int se
     _lastSelectedIndex = selectedIndex;
     lastPage = currentPage;
 }
-
 void LCDManager::showNumericSelection(String title, String value, String unit, String leftLab, String okLab, String rightLab) {
+    String currentViewID = "NUM_" + title;
+    bool viewChanged = (_lastView != currentViewID);
+
     updateHeader(title, _lastBleStatus);
     _drawActionBar(leftLab, okLab, rightLab);
 
-    _tft.fillRect(0, 30, 320, 170, ILI9341_BLACK);
+    // Track last value to minimize redraw
+    static String lastValue = "";
+    if (viewChanged) lastValue = "";
 
-    _tft.setTextColor(ILI9341_WHITE);
-    _tft.setTextSize(6);
-    
-    int16_t x1, y1;
-    uint16_t w, h;
-    _tft.getTextBounds(value, 0, 0, &x1, &y1, &w, &h);
-    _tft.setCursor(160 - (w / 2), 80);
-    _tft.print(value);
+    if (viewChanged) {
+        // Initial setup for Numeric View
+        _tft.fillRect(0, 30, 320, 170, ILI9341_BLACK);
 
-    _tft.setTextSize(2);
-    _tft.getTextBounds(unit, 0, 0, &x1, &y1, &w, &h);
-    _tft.setCursor(160 - (w / 2), 140);
-    _tft.print(unit);
+        // Static Arrows (Up and Down)
+        _tft.setTextColor(ILI9341_YELLOW);
+        _tft.setTextSize(3);
 
-    _tft.setTextColor(ILI9341_YELLOW);
-    _tft.setTextSize(3);
-    _tft.setCursor(30, 80);
-    _tft.print("<");
-    _tft.setCursor(270, 80);
-    _tft.print(">");
+        // Up Arrow
+        _tft.setCursor(153, 40);
+        _tft.print("^");
+
+        // Down Arrow
+        _tft.setCursor(153, 170);
+        _tft.print("v");
+
+        // Static Unit
+        _tft.setTextColor(ILI9341_WHITE);
+        _tft.setTextSize(2);
+        int16_t x1, y1;
+        uint16_t w, h;
+        _tft.getTextBounds(unit, 0, 0, &x1, &y1, &w, &h);
+        _tft.setCursor(160 - (w / 2), 145);
+        _tft.print(unit);
+    }
+
+    if (viewChanged || value != lastValue) {
+        // Surgical update of the Number area
+        _tft.fillRect(50, 70, 220, 70, ILI9341_BLACK);
+        _tft.setTextColor(ILI9341_WHITE);
+        _tft.setTextSize(6);
+
+        int16_t x1, y1;
+        uint16_t w, h;
+        _tft.getTextBounds(value, 0, 0, &x1, &y1, &w, &h);
+        _tft.setCursor(160 - (w / 2), 80);
+        _tft.print(value);
+
+        lastValue = value;
+    }
+
+    _lastView = currentViewID;
 }
 
 void LCDManager::showOperationView(String title, String spiceName, int progress, String status, String cancelLab) {
