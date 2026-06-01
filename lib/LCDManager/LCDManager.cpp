@@ -165,22 +165,22 @@ void LCDManager::showMenu(String title, const char* options[], int count, int se
     updateHeader(title, _lastBleStatus);
     _drawActionBar(leftLab, okLab, rightLab);
 
-    int maxItems = 5;
+    int itemsPerPage = 5;
     int itemHeight = 30;
     int startY = 40;
     
-    int scrollOffset = 0;
-    if (selectedIndex >= maxItems) {
-        scrollOffset = selectedIndex - (maxItems - 1);
-    }
+    // Calculate page: 0-4 is Page 0, 5-9 is Page 1, etc.
+    int currentPage = selectedIndex / itemsPerPage;
+    int scrollOffset = currentPage * itemsPerPage;
 
-    static int lastScrollOffset = -1;
+    static int lastPage = -1;
+    if (viewChanged) lastPage = -1; // Reset on view change
     
-    if (viewChanged || scrollOffset != lastScrollOffset) {
-        // Full redraw of the menu area
+    if (viewChanged || currentPage != lastPage) {
+        // Full Redraw of the current page
         _tft.fillRect(0, 30, 320, 170, ILI9341_BLACK);
-        for (int i = 0; i < maxItems; i++) {
-            int optIdx = i + scrollOffset;
+        for (int i = 0; i < itemsPerPage; i++) {
+            int optIdx = scrollOffset + i;
             if (optIdx >= count) break;
 
             int y = startY + (i * itemHeight);
@@ -194,35 +194,41 @@ void LCDManager::showMenu(String title, const char* options[], int count, int se
             _tft.setCursor(20, y);
             _tft.print(options[optIdx]);
         }
+        
+        // Draw Page Indicator if list is long
+        if (count > itemsPerPage) {
+            int totalPages = (count + itemsPerPage - 1) / itemsPerPage;
+            String pg = "Pg " + String(currentPage + 1) + "/" + String(totalPages);
+            _tft.setTextSize(1);
+            _tft.setTextColor(ILI9341_LIGHTGREY);
+            _tft.setCursor(270, 185);
+            _tft.print(pg);
+        }
     } else if (selectedIndex != _lastSelectedIndex) {
-        // Fast Partial Redraw
-        int oldIdxInView = _lastSelectedIndex - scrollOffset;
-        int newIdxInView = selectedIndex - scrollOffset;
+        // Fast Partial Redraw within the same page
+        int oldIdxInPage = _lastSelectedIndex % itemsPerPage;
+        int newIdxInPage = selectedIndex % itemsPerPage;
 
         // Clear old highlight
-        if (oldIdxInView >= 0 && oldIdxInView < maxItems) {
-            int y = startY + (oldIdxInView * itemHeight);
-            _tft.fillRect(5, y - 5, 310, itemHeight, ILI9341_BLACK);
-            _tft.setTextColor(ILI9341_LIGHTGREY);
-            _tft.setTextSize(2);
-            _tft.setCursor(20, y);
-            _tft.print(options[_lastSelectedIndex]);
-        }
+        int oldY = startY + (oldIdxInPage * itemHeight);
+        _tft.fillRect(5, oldY - 5, 310, itemHeight, ILI9341_BLACK);
+        _tft.setTextColor(ILI9341_LIGHTGREY);
+        _tft.setTextSize(2);
+        _tft.setCursor(20, oldY);
+        _tft.print(options[_lastSelectedIndex]);
 
         // Draw new highlight
-        if (newIdxInView >= 0 && newIdxInView < maxItems) {
-            int y = startY + (newIdxInView * itemHeight);
-            _tft.fillRect(5, y - 5, 310, itemHeight, ILI9341_ORANGE);
-            _tft.setTextColor(ILI9341_WHITE);
-            _tft.setTextSize(2);
-            _tft.setCursor(20, y);
-            _tft.print(options[selectedIndex]);
-        }
+        int newY = startY + (newIdxInPage * itemHeight);
+        _tft.fillRect(5, newY - 5, 310, itemHeight, ILI9341_ORANGE);
+        _tft.setTextColor(ILI9341_WHITE);
+        _tft.setTextSize(2);
+        _tft.setCursor(20, newY);
+        _tft.print(options[selectedIndex]);
     }
 
     _lastView = currentViewID;
     _lastSelectedIndex = selectedIndex;
-    lastScrollOffset = scrollOffset;
+    lastPage = currentPage;
 }
 
 void LCDManager::showNumericSelection(String title, String value, String unit, String leftLab, String okLab, String rightLab) {

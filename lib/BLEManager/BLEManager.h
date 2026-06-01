@@ -26,6 +26,12 @@ public:
     void sendAlert(const char* code, int slot);
     
     bool isConnected() { return _deviceConnected; }
+    int getBleStatus() {
+        if (_deviceConnected) return 2;
+        // If initialized and not connected, we assume it's advertising
+        // based on the logic in tick().
+        return 1; 
+    }
 
     // Callbacks
     void onWrite(BLECharacteristic* pCharacteristic) override;
