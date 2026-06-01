@@ -24,6 +24,9 @@ public:
     void updateHeader(String title, int bleStatus); // 0: Disconnected, 1: Advertising, 2: Connected
     void updateStatus(String status, uint16_t color = ILI9341_WHITE);
     void updateContent(String line1, String line2 = "");
+    void updateSpiceName(String name); // Line 1 (Surgical)
+    void updateTask(String task);   // Line 2 (Surgical)
+    void updateDetail(String detail); // Line 3 (Surgical)
     void drawProgressBar(int progress, int y = 140, bool forceRedraw = false); 
     
     // Hardware Diagnostics
@@ -40,6 +43,9 @@ private:
     
     String _lastHeaderTitle;
     String _lastStatus;
+    String _lastSpiceName; // Track Line 1
+    String _lastTask;      // Track Line 2
+    String _lastDetail;    // Track Line 3
     int _lastBleStatus; // 0, 1, 2
     int _lastProgress;  // Track for incremental drawing
     

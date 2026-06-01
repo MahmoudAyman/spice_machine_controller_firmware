@@ -53,9 +53,9 @@ void changeState(SystemState newState) {
 
     // Update Header on State Change
     String header = "Spice Mixer";
-    if (isRecipeMode) header = "MODE: Recipe";
-    else if (isInitialCheck) header = "MODE: System Check";
+    if (isInitialCheck) header = "MODE: System Check";
     else if (currentState == STATE_MAIN_MENU) header = "MAIN MENU";
+    else if (isRecipeMode || currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) header = "DISPENSING...";
     else header = "MODE: Manual";
     
     lcd.updateHeader(header, bleManager.getBleStatus());
@@ -153,9 +153,9 @@ void loop() {
   if (currentBleStatus != lastBleStatus) {
       lastBleStatus = currentBleStatus;
       String header = "Spice Mixer";
-      if (isRecipeMode) header = "MODE: Recipe";
-      else if (isInitialCheck) header = "MODE: System Check";
+      if (isInitialCheck) header = "MODE: System Check";
       else if (currentState == STATE_MAIN_MENU) header = "MAIN MENU";
+      else if (isRecipeMode || currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) header = "DISPENSING...";
       else header = "MODE: Manual";
       lcd.updateHeader(header, currentBleStatus);
   }
@@ -224,7 +224,6 @@ void loop() {
           lcd.drawProgressBar(totalProgress, 160); 
 
           // 3. Middle Content (Name -> Status)
-          // We use targeted updates to avoid clearing the whole content area
           lcd.updateContent(spices[currentTubeIndex].name, "Scanning..."); 
           
           startIdentifySpice();
@@ -241,12 +240,9 @@ void loop() {
 
         if (detectedSpice == expectedSpice) {
            if (isInitialCheck) {
-               // Update Status and Bar incrementally
                lcd.updateContent(detectedSpice, "VERIFIED");
                int nextProgress = (int)(((float)(currentTubeIndex + 1) / TOTAL_TUBES) * 100);
                lcd.drawProgressBar(nextProgress, 160);
-               
-               // Smoothing delay for "VERIFIED" visibility
                delay(100);
 
                if (STATE_TIMEOUT(simulationEnabled ? 50 : 800)) {
@@ -266,11 +262,12 @@ void loop() {
                    }
                }
            } else {
-               lcd.showOperationView("IDENTIFIED", detectedSpice, 100, "Match Confirmed", "");
+               lcd.updateTask("IDENTIFIED");
+               lcd.updateDetail("Match Confirmed");
+               delay(200);
                changeState(STATE_CHECKING_FILL); 
            }
         } else {
-           Serial.printf("[ERROR] Wrong Spice! Found %s at slot %d\n", detectedSpice.c_str(), pendingTargetTubeIndex + 1);
            if (isInitialCheck) {
                 lcd.updateContent("MISMATCH!", "Found: " + detectedSpice);
                 lcd.updateStatus("Expected: " + expectedSpice, ILI9341_RED);
@@ -279,16 +276,13 @@ void loop() {
            }
            bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1);
            if (STATE_TIMEOUT(3000)) {
-               if (isInitialCheck) {
-                   changeState(STATE_EMPTY_RETRY); 
-               } else {
-                   prepareReturnHome();
-               }
+               if (isInitialCheck) changeState(STATE_EMPTY_RETRY); 
+               else prepareReturnHome();
            }
         }
       } else if (!isInitialCheck) {
-          // Manual mode identifying screen (non-boot)
-          lcd.showOperationView("IDENTIFYING", spices[pendingTargetTubeIndex].name, 50, "Scanning Label...", "Abort");
+          lcd.updateTask("IDENTIFYING...");
+          lcd.updateDetail("Scanning Label");
       }
       break;
     }
@@ -433,6 +427,11 @@ void loop() {
     }
 
     case STATE_ROTATING_TO_TARGET: {
+      if (!isInitialCheck) {
+          lcd.updateHeader("DISPENSING...", bleManager.getBleStatus());
+          lcd.updateTask("Moving to Slot " + String(pendingTargetTubeIndex + 1));
+          lcd.updateDetail(""); 
+      }
       if (simulationEnabled) {
           if (STATE_TIMEOUT(50)) { 
               startIdentifySpice();
@@ -452,17 +451,24 @@ void loop() {
     }
 
     case STATE_CHECKING_FILL: {
-      lcd.showOperationView("VERIFYING", spices[pendingTargetTubeIndex].name, 0, "Checking Levels", "Abort");
+      if (!isInitialCheck) {
+          lcd.updateTask("VERIFYING LEVEL");
+          lcd.updateDetail("Checking Sensor...");
+      }
       if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) { 
           int laserState = simulationEnabled ? HIGH : digitalRead(LASER_RX_PIN);
           if (laserState == HIGH) { 
-            Serial.println("[SENSOR] Fill sensor: FILLED.");
-            lcd.showOperationView("READY", spices[pendingTargetTubeIndex].name, 100, "Level OK", "Abort");
+            if (!isInitialCheck) {
+                lcd.updateTask("READY");
+                lcd.updateDetail("Level OK");
+                delay(200);
+            }
             startDispense(targetDispenseCycles);
             changeState(STATE_DISPENSING);
           } else {
-            Serial.println("[SENSOR] Fill sensor: EMPTY!");
-            lcd.showOperationView("EMPTY!", spices[pendingTargetTubeIndex].name, 0, "Needs Refill", "Exit");
+            if (!isInitialCheck) {
+                lcd.showOperationView("EMPTY!", spices[pendingTargetTubeIndex].name, 0, "Needs Refill", "Exit");
+            }
             bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
             changeState(STATE_EMPTY_RETRY);
           }
@@ -490,10 +496,21 @@ void loop() {
     case STATE_DISPENSING: {
       static int lastRem = -1;
       int currentRem = getRemainingDispenseCycles();
-      if (currentRem != lastRem) {
-          lastRem = currentRem;
-          int progress = (int)((1.0 - (float)lastRem / (targetDispenseCycles > 0 ? targetDispenseCycles : 1)) * 100);
-          lcd.showOperationView("DISPENSING", spices[pendingTargetTubeIndex].name, progress, String(lastRem) + " cycles left", "Abort");
+      
+      if (!isInitialCheck) {
+          lcd.updateTask("DISPENSING...");
+          if (currentRem != lastRem) {
+              lastRem = currentRem;
+              lcd.updateDetail("Cycles Left: " + String(lastRem));
+              
+              int totalItems = isRecipeMode ? (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount) : 1;
+              float baseProgress = ((float)currentIngredientIndex / totalItems) * 100.0;
+              float itemContribution = (1.0 / totalItems) * 100.0;
+              float itemProgress = (1.0 - (float)currentRem / (targetDispenseCycles > 0 ? targetDispenseCycles : 1));
+              int globalProgress = (int)(baseProgress + (itemProgress * itemContribution));
+              
+              lcd.drawProgressBar(globalProgress, 160);
+          }
       }
       
       if (!isDispensing()) {
@@ -502,21 +519,16 @@ void loop() {
           float dispensed = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0); 
           spices[pendingTargetTubeIndex].level -= (int)dispensed;
           if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
-          
           saveGlobalSpices(); 
           
-          if (spices[pendingTargetTubeIndex].level < 15) {
-              bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
-          }
+          if (spices[pendingTargetTubeIndex].level < 15) bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
 
           if (isRecipeMode) {
             currentIngredientIndex++;
             int count = (currentRecipeIndex == -1) ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount;
             if (currentIngredientIndex < count) {
-               Serial.printf("[RECIPE] Moving to next ingredient (%d/%d)...\n", currentIngredientIndex + 1, count);
                startRecipeIngredient();
             } else {
-               Serial.println("[RECIPE] All ingredients dispensed.");
                lcd.showOperationView("COMPLETE", "Recipe Finished", 100, "Enjoy!", "Back");
                delay(1500);
                prepareReturnHome();
@@ -571,7 +583,20 @@ void startRecipeIngredient() {
    Serial.printf("[RECIPE] Target Tube: %d | Grams: %.1fg | Cycles: %d\n", 
        pendingTargetTubeIndex + 1, currentRecipeGrams, targetDispenseCycles);
 
-   lcd.showOperationView("MOVING", spices[pendingTargetTubeIndex].name, 0, "To Slot " + String(pendingTargetTubeIndex + 1), "Abort");
+   if (!isInitialCheck) {
+       // Enhanced Stability: Use surgical updates to keep progress bar drawn
+       lcd.updateHeader("DISPENSING...", bleManager.getBleStatus());
+       if (currentIngredientIndex == 0) {
+           // First ingredient: Full setup
+           lcd.updateContent(spices[pendingTargetTubeIndex].name, "PREPARING");
+           lcd.drawProgressBar(0, 160, true);
+       } else {
+           // Subsequent ingredients: Surgical updates to preserve Progress Bar
+           lcd.updateSpiceName(spices[pendingTargetTubeIndex].name);
+           lcd.updateTask("PREPARING");
+           lcd.updateDetail("");
+       }
+   }
 
    int tubesToMove = (pendingTargetTubeIndex >= currentTubeIndex) ? 
                      (pendingTargetTubeIndex - currentTubeIndex) : 

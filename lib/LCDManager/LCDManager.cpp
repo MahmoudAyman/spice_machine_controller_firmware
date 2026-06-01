@@ -21,6 +21,9 @@ void LCDManager::begin() {
     // Initial State Reset
     _lastHeaderTitle = "";
     _lastStatus = "";
+    _lastSpiceName = "";
+    _lastTask = "";
+    _lastDetail = "";
     _lastLeft = "__NONE__";
     _lastOk = "__NONE__";
     _lastRight = "__NONE__";
@@ -98,16 +101,57 @@ void LCDManager::updateContent(String line1, String line2) {
     // Clear content area (30 to 180)
     _tft.fillRect(0, 30, 320, 150, ILI9341_BLACK);
     _lastProgress = -1; 
+    _lastSpiceName = line1;
+    _lastTask = line2;
+    _lastDetail = "";
     
     _tft.setTextColor(ILI9341_WHITE);
     _tft.setTextSize(3);
-    _tft.setCursor(20, 70);
+    _tft.setCursor(20, 60); 
     _tft.println(line1);
     
     if (line2 != "") {
-        _tft.setCursor(20, 120);
+        _tft.setTextSize(2);
+        _tft.setCursor(20, 100);
         _tft.println(line2);
     }
+}
+
+void LCDManager::updateSpiceName(String name) {
+    if (!_isInitialized || name == _lastSpiceName) return;
+    
+    // Clear Line 1 area (roughly 50 to 95)
+    _tft.fillRect(0, 50, 320, 45, ILI9341_BLACK);
+    _tft.setTextColor(ILI9341_WHITE);
+    _tft.setTextSize(3);
+    _tft.setCursor(20, 60);
+    _tft.print(name);
+    
+    _lastSpiceName = name;
+}
+
+void LCDManager::updateTask(String task) {
+    if (!_isInitialized || task == _lastTask) return;
+    
+    _tft.fillRect(0, 95, 320, 30, ILI9341_BLACK);
+    _tft.setTextColor(ILI9341_CYAN);
+    _tft.setTextSize(2);
+    _tft.setCursor(20, 100);
+    _tft.print(task);
+    
+    _lastTask = task;
+}
+
+void LCDManager::updateDetail(String detail) {
+    if (!_isInitialized || detail == _lastDetail) return;
+    
+    _tft.fillRect(0, 125, 320, 30, ILI9341_BLACK);
+    _tft.setTextColor(ILI9341_YELLOW);
+    _tft.setTextSize(2);
+    _tft.setCursor(20, 130);
+    _tft.print(detail);
+    
+    _lastDetail = detail;
 }
 
 void LCDManager::drawProgressBar(int progress, int y, bool forceRedraw) {
@@ -284,12 +328,12 @@ void LCDManager::showOperationView(String title, String spiceName, int progress,
     _tft.setCursor(160 - (w/2), 60);
     _tft.print(spiceName);
 
-    drawProgressBar(progress, 110, true);
+    drawProgressBar(progress, 160, true); 
 
     _tft.setTextColor(ILI9341_WHITE);
     _tft.setTextSize(2);
     _tft.getTextBounds(status, 0, 0, &x1, &y1, &w, &h);
-    _tft.setCursor(160 - (w/2), 150);
+    _tft.setCursor(160 - (w/2), 120);
     _tft.print(status);
 }
 
