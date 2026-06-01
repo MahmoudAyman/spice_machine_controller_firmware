@@ -33,6 +33,7 @@ bool remoteRequestTriggered = false;
 Recipe remoteRecipe;
 int currentRecipeIndex = 0;     
 int currentIngredientIndex = 0; 
+int lastSelectionDrawn = -1; 
 
 // --- Timer Variables ---
 unsigned long stateStartTime = 0;
@@ -47,15 +48,17 @@ void changeState(SystemState newState) {
     Serial.printf("[STATE] %d -> %d\n", currentState, newState);
     currentState = newState;
     stateStartTime = millis();
+    lastSelectionDrawn = -1; // Reset tracker for UI redraws
     sendBleStatus(); 
 
     // Update Header on State Change
     String header = "Spice Mixer";
     if (isRecipeMode) header = "MODE: Recipe";
     else if (isInitialCheck) header = "MODE: System Check";
+    else if (currentState == STATE_MAIN_MENU) header = "MAIN MENU";
     else header = "MODE: Manual";
     
-    lcd.updateHeader(header, bleManager.isConnected());
+    lcd.updateHeader(header, bleManager.getBleStatus());
 }
 
 void sendBleStatus() {
@@ -145,11 +148,16 @@ void loop() {
   bleManager.tick();
   
   // Safe Edge-Triggered BLE Status Update
-  static bool lastBleConn = false;
-  bool currentBleConn = bleManager.isConnected();
-  if (currentBleConn != lastBleConn) {
-      lastBleConn = currentBleConn;
-      lcd.updateHeader(isRecipeMode ? "MODE: Recipe" : "MODE: Manual", currentBleConn);
+  static int lastBleStatus = -1;
+  int currentBleStatus = bleManager.getBleStatus();
+  if (currentBleStatus != lastBleStatus) {
+      lastBleStatus = currentBleStatus;
+      String header = "Spice Mixer";
+      if (isRecipeMode) header = "MODE: Recipe";
+      else if (isInitialCheck) header = "MODE: System Check";
+      else if (currentState == STATE_MAIN_MENU) header = "MAIN MENU";
+      else header = "MODE: Manual";
+      lcd.updateHeader(header, currentBleStatus);
   }
 
   // Periodic status push
@@ -175,10 +183,18 @@ void loop() {
       isRecipeMode = false;
       isInitialCheck = false;
       emergencyStopHardware();
-      lcd.updateHeader("ABORTED", bleManager.isConnected());
-      lcd.updateContent("Returning Home", "");
+      lcd.showOperationView("ABORTED", "Returning Home", 0, "Stopping...", "");
       prepareReturnHome();
       return;
+  }
+
+  // --- Physical Button Input (Edge Triggered) ---
+  static char lastKey = 0;
+  char rawKey = getButtonKey();
+  char key = 0;
+  if (rawKey != lastKey) {
+      if (rawKey != 0) key = rawKey; // Key pressed
+      lastKey = rawKey;
   }
 
   switch (currentState) {
@@ -191,8 +207,7 @@ void loop() {
           currentTubeIndex = 0;
           pendingTargetTubeIndex = 0;
           if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
-          lcd.updateContent("System Check", "Initializing...");
-          lcd.updateStatus("Powering Motors...", ILI9341_YELLOW);
+          lcd.showOperationView("BOOTING", "System Check", 0, "Initializing...", "");
           changeState(STATE_SYSTEM_CHECK);
       }
       break;
@@ -200,9 +215,8 @@ void loop() {
     case STATE_SYSTEM_CHECK:
       if (STATE_TIMEOUT(simulationEnabled ? 50 : 500)) {
           Serial.printf("[BOOT] Scanning Tube %d/20...\n", currentTubeIndex + 1);
-          lcd.updateContent("Scanning...", "Tube " + String(currentTubeIndex + 1));
-          lcd.drawProgressBar((int)(((float)currentTubeIndex / TOTAL_TUBES) * 100));
-          lcd.updateStatus("Verifying Slots", ILI9341_WHITE);
+          lcd.showOperationView("SYSTEM CHECK", "Scanning Tube " + String(currentTubeIndex + 1), 
+                               (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100), "Verifying Slots", "Skip");
           startIdentifySpice();
           changeState(STATE_IDENTIFYING);
       }
@@ -216,124 +230,110 @@ void loop() {
           currentRecipeIndex = -1; 
           currentIngredientIndex = 0;
           servingsCount = 1;
-          lcd.updateContent("Remote Order", "Processing...");
-          lcd.updateStatus("App Controlled", ILI9341_CYAN);
+          lcd.showOperationView("REMOTE ORDER", "Processing...", 0, "App Controlled", "Abort");
           startRecipeIngredient();
           break;
       }
 
-      char key = getButtonKey();
-      if (key == 'U' || key == 'D') {
-          currentSelection = (currentSelection == 0) ? 1 : 0;
-          lcd.updateContent("MAIN MENU:", currentSelection == 0 ? "> 1. Recipes" : "> 2. Manual");
-          lcd.updateStatus("U/D: Nav  N: Select", ILI9341_WHITE);
-          delay(200); 
+      if (currentSelection != lastSelectionDrawn) {
+          const char* menuOptions[] = {"Recipes", "Manual Control"};
+          lcd.showMenu("MAIN MENU", menuOptions, 2, currentSelection, "", "Select");
+          lastSelectionDrawn = currentSelection;
+      }
+
+      if (key == 'U') {
+          currentSelection = 0;
+      } else if (key == 'D') {
+          currentSelection = 1;
       } else if (key == 'N') {
           if (currentSelection == 0) {
               currentSelection = 0; 
-              lcd.updateContent("Select Recipe:", recipes[0].name);
-              lcd.updateStatus("U/D: Browse  N: Pick", ILI9341_WHITE);
               changeState(STATE_RECIPE_SELECT);
           } else {
               currentSelection = 0; 
-              lcd.updateContent("Select Tube:", String(currentSelection + 1));
-              lcd.updateStatus("U/D: Browse  N: Pick", ILI9341_WHITE);
               changeState(STATE_AWAITING_INPUT);
           }
-          delay(200);
       }
       break;
     }
 
     case STATE_RECIPE_SELECT: {
-      char key = getButtonKey();
+      if (currentSelection != lastSelectionDrawn) {
+          const char* recipeNames[activeRecipeCount];
+          for (int i = 0; i < activeRecipeCount; i++) recipeNames[i] = recipes[i].name.c_str();
+          lcd.showMenu("SELECT RECIPE", recipeNames, activeRecipeCount, currentSelection, "Back", "Select");
+          lastSelectionDrawn = currentSelection;
+      }
+
       if (key == 'U') {
-          currentSelection = (currentSelection + 1) % activeRecipeCount;
-          lcd.updateContent("Select Recipe:", recipes[currentSelection].name);
-          delay(200);
+          if (currentSelection > 0) currentSelection--;
       } else if (key == 'D') {
-          currentSelection = (currentSelection - 1 + activeRecipeCount) % activeRecipeCount;
-          lcd.updateContent("Select Recipe:", recipes[currentSelection].name);
-          delay(200);
+          if (currentSelection < activeRecipeCount - 1) currentSelection++;
       } else if (key == 'N') {
           currentRecipeIndex = currentSelection;
           currentSelection = 1; 
-          lcd.updateContent("Servings:", String(currentSelection));
-          lcd.updateStatus("Set Quantity", ILI9341_WHITE);
           changeState(STATE_RECIPE_SERVINGS_INPUT);
-          delay(200);
-      } else if (key == 'E') {
+      } else if (key == 'L') {
           currentSelection = 0;
-          lcd.updateContent("MAIN MENU:", "1. Recipes");
           changeState(STATE_MAIN_MENU);
-          delay(200);
       }
       break;
     }
 
     case STATE_RECIPE_SERVINGS_INPUT: {
-      char key = getButtonKey();
+      if (currentSelection != lastSelectionDrawn) {
+          lcd.showNumericSelection("SERVINGS", String(currentSelection), "Portions", "Back", "Start");
+          lastSelectionDrawn = currentSelection;
+      }
+
       if (key == 'U') {
           currentSelection++;
-          lcd.updateContent("Servings:", String(currentSelection));
-          delay(200);
       } else if (key == 'D') {
           if (currentSelection > 1) currentSelection--;
-          lcd.updateContent("Servings:", String(currentSelection));
-          delay(200);
       } else if (key == 'N') {
            servingsCount = currentSelection;
            currentIngredientIndex = 0;    
            isRecipeMode = true;
-           lcd.updateContent("Starting:", recipes[currentRecipeIndex].name);
-           lcd.updateStatus("Preparing Dispenser", ILI9341_WHITE);
+           lcd.showOperationView("PREPARING", recipes[currentRecipeIndex].name, 0, "Initializing...", "Abort");
            startRecipeIngredient(); 
-           delay(200);
-      } else if (key == 'E') {
+      } else if (key == 'L') {
            currentSelection = currentRecipeIndex;
-           lcd.updateContent("Select Recipe:", recipes[currentSelection].name);
            changeState(STATE_RECIPE_SELECT);
-           delay(200);
       }
       break;
     }
 
     case STATE_AWAITING_INPUT: {
-      char key = getButtonKey();
+      if (currentSelection != lastSelectionDrawn) {
+          lcd.showNumericSelection("SELECT TUBE", String(currentSelection + 1), "Slot Number", "Back", "Select");
+          lastSelectionDrawn = currentSelection;
+      }
+
       if (key == 'U') {
-          currentSelection = (currentSelection + 1) % TOTAL_TUBES;
-          lcd.updateContent("Select Tube:", String(currentSelection + 1));
-          delay(200);
+          if (currentSelection > 0) currentSelection--;
       } else if (key == 'D') {
-          currentSelection = (currentSelection - 1 + TOTAL_TUBES) % TOTAL_TUBES;
-          lcd.updateContent("Select Tube:", String(currentSelection + 1));
-          delay(200);
+          if (currentSelection < TOTAL_TUBES - 1) currentSelection++;
       } else if (key == 'N') {
           pendingTargetTubeIndex = currentSelection;
           currentSelection = 1; 
-          lcd.updateContent("Quantity (Tlp):", String(currentSelection));
-          lcd.updateStatus("Set Amount", ILI9341_WHITE);
           changeState(STATE_AWAITING_QUANTITY_INPUT);
-          delay(200);
-      } else if (key == 'E') {
+      } else if (key == 'L') {
           currentSelection = 1; 
-          lcd.updateContent("MAIN MENU:", "1. Recipes");
           changeState(STATE_MAIN_MENU);
-          delay(200);
       }
       break;
     }
 
     case STATE_AWAITING_QUANTITY_INPUT: {
-      char key = getButtonKey();
+      if (currentSelection != lastSelectionDrawn) {
+          lcd.showNumericSelection("QUANTITY", String(currentSelection), "Theelepels", "Back", "Start");
+          lastSelectionDrawn = currentSelection;
+      }
+
       if (key == 'U') {
           currentSelection++;
-          lcd.updateContent("Quantity (Tlp):", String(currentSelection));
-          delay(200);
       } else if (key == 'D') {
           if (currentSelection > 1) currentSelection--;
-          lcd.updateContent("Quantity (Tlp):", String(currentSelection));
-          delay(200);
       } else if (key == 'N') {
               manualQuantityInput = currentSelection;
               targetDispenseCycles = manualQuantityInput * CYCLES_PER_THEELEPEL;
@@ -344,24 +344,19 @@ void loop() {
               
               if (tubesToMove > 0) {
                 Serial.printf("[MANUAL] Rotating %d tubes to target %d...\n", tubesToMove, pendingTargetTubeIndex + 1);
-                lcd.updateContent("Rotating...", "To Slot " + String(pendingTargetTubeIndex + 1));
-                lcd.updateStatus("Motor Running", ILI9341_YELLOW);
+                lcd.showOperationView("ROTATING", "Slot " + String(pendingTargetTubeIndex + 1), 0, "Motor Running", "Abort");
                 if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
                 stepper.move(tubesToMove * STEPS_PER_TUBE);
                 currentTubeIndex = pendingTargetTubeIndex; 
                 changeState(STATE_ROTATING_TO_TARGET);
               } else {
                  Serial.println("[MANUAL] Already at target tube.");
-                 lcd.updateContent("Arrived", "Stabilizing...");
-                 lcd.updateStatus("At Slot " + String(pendingTargetTubeIndex + 1), ILI9341_GREEN);
+                 lcd.showOperationView("ARRIVED", "Slot " + String(pendingTargetTubeIndex + 1), 100, "Stabilizing...", "Abort");
                  changeState(STATE_IDENTIFYING); 
               }
-              delay(200);
-      } else if (key == 'E') {
+      } else if (key == 'L') {
           currentSelection = pendingTargetTubeIndex;
-          lcd.updateContent("Select Tube:", String(currentSelection + 1));
           changeState(STATE_AWAITING_INPUT);
-          delay(200);
       }
       break;
     }
@@ -393,8 +388,7 @@ void loop() {
         Serial.printf("[SENSOR] Expected: %s | Detected: %s\n", expectedSpice.c_str(), detectedSpice.c_str());
 
         if (detectedSpice == expectedSpice) {
-           lcd.updateContent("Correct Spice:", detectedSpice);
-           lcd.updateStatus("Match Confirmed", ILI9341_GREEN);
+           lcd.showOperationView("IDENTIFIED", detectedSpice, 100, "Match Confirmed", "");
            if (isInitialCheck) {
                if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) {
                    currentTubeIndex++;
@@ -404,8 +398,7 @@ void loop() {
                        changeState(STATE_ROTATING_TO_TARGET);
                    } else {
                        Serial.println("[BOOT] Initial Check Complete. All tubes verified.");
-                       lcd.updateContent("System Ready!", "Tubes Verified");
-                       lcd.updateStatus("Done", ILI9341_GREEN);
+                       lcd.showOperationView("SYSTEM READY", "Tubes Verified", 100, "Returning Home", "");
                        isInitialCheck = false;
                        isRecipeMode = false;
                        prepareReturnHome();
@@ -416,35 +409,35 @@ void loop() {
            }
         } else {
            Serial.printf("[ERROR] Wrong Spice! Found %s at slot %d\n", detectedSpice.c_str(), pendingTargetTubeIndex + 1);
-           lcd.updateContent("WRONG HERB!", "Found: " + detectedSpice);
-           lcd.updateStatus("ERROR: MISMATCH", ILI9341_RED);
+           lcd.showOperationView("MISMATCH!", "Found: " + detectedSpice, 0, "ERROR: WRONG SPICE", "Exit");
            bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1);
            if (STATE_TIMEOUT(3000)) {
                if (isInitialCheck) {
-                   lcd.updateContent("Manual Fix Req", "Press N to Retry");
                    changeState(STATE_EMPTY_RETRY); 
                } else {
                    prepareReturnHome();
                }
            }
         }
+      } else {
+          // Periodically update identifying screen
+          lcd.showOperationView("IDENTIFYING", spices[pendingTargetTubeIndex].name, 50, "Scanning Label...", "Abort");
       }
       break;
     }
 
     case STATE_CHECKING_FILL: {
+      lcd.showOperationView("VERIFYING", spices[pendingTargetTubeIndex].name, 0, "Checking Levels", "Abort");
       if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) { 
           int laserState = simulationEnabled ? HIGH : digitalRead(LASER_RX_PIN);
           if (laserState == HIGH) { 
             Serial.println("[SENSOR] Fill sensor: FILLED.");
-            lcd.updateContent("Dispenser:", "Tube Ready");
-            lcd.updateStatus("Level OK", ILI9341_GREEN);
+            lcd.showOperationView("READY", spices[pendingTargetTubeIndex].name, 100, "Level OK", "Abort");
             startDispense(targetDispenseCycles);
             changeState(STATE_DISPENSING);
           } else {
             Serial.println("[SENSOR] Fill sensor: EMPTY!");
-            lcd.updateContent("TUBE EMPTY!", "Needs Refill");
-            lcd.updateStatus("ALERT: LOW LEVEL", ILI9341_RED);
+            lcd.showOperationView("EMPTY!", spices[pendingTargetTubeIndex].name, 0, "Needs Refill", "Exit");
             bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
             changeState(STATE_EMPTY_RETRY);
           }
@@ -453,13 +446,14 @@ void loop() {
     }
 
     case STATE_EMPTY_RETRY: {
+      lcd.showOperationView("ALERT", "Refill Needed", 0, "Press OK to Retry", "Back");
       char key = getButtonKey();
       if (key == 'N') {
           Serial.println("[EVENT] Retrying identification/fill check...");
           if (isInitialCheck) changeState(STATE_SYSTEM_CHECK);
           else changeState(STATE_CHECKING_FILL);
       } 
-      else if (key == 'E') {
+      else if (key == 'L') {
           Serial.println("[EVENT] User cancelled after empty/wrong spice.");
           isInitialCheck = false;
           isRecipeMode = false;
@@ -470,12 +464,11 @@ void loop() {
 
     case STATE_DISPENSING: {
       static int lastRem = -1;
-      if (getRemainingDispenseCycles() != lastRem) {
-          lastRem = getRemainingDispenseCycles();
+      int currentRem = getRemainingDispenseCycles();
+      if (currentRem != lastRem) {
+          lastRem = currentRem;
           int progress = (int)((1.0 - (float)lastRem / (targetDispenseCycles > 0 ? targetDispenseCycles : 1)) * 100);
-          lcd.updateContent("Dispensing...", spices[pendingTargetTubeIndex].name);
-          lcd.drawProgressBar(progress);
-          lcd.updateStatus(String(lastRem) + " cycles left", ILI9341_WHITE);
+          lcd.showOperationView("DISPENSING", spices[pendingTargetTubeIndex].name, progress, String(lastRem) + " cycles left", "Abort");
       }
       
       if (!isDispensing()) {
@@ -499,13 +492,13 @@ void loop() {
                startRecipeIngredient();
             } else {
                Serial.println("[RECIPE] All ingredients dispensed.");
-               lcd.updateContent("Recipe Done!", "Enjoy!");
-               lcd.updateStatus("Success", ILI9341_GREEN);
+               lcd.showOperationView("COMPLETE", "Recipe Finished", 100, "Enjoy!", "Back");
+               delay(1500);
                prepareReturnHome();
             }
           } else {
-            lcd.updateContent("Manual Done!", "Enjoy!");
-            lcd.updateStatus("Success", ILI9341_GREEN);
+            lcd.showOperationView("COMPLETE", "Manual Done", 100, "Enjoy!", "Back");
+            delay(1500);
             prepareReturnHome(); 
           }
       }
@@ -513,12 +506,11 @@ void loop() {
     }
 
     case STATE_RETURNING_HOME: {
+      lcd.showOperationView("HOMING", "Moving to Slot 1", 50, "Clearing Area", "");
       if (simulationEnabled) {
           if (STATE_TIMEOUT(100)) {
               if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
               isRecipeMode = false;
-              lcd.updateContent("MAIN MENU:", "Select Operation");
-              lcd.updateStatus("System Ready", ILI9341_WHITE);
               changeState(STATE_MAIN_MENU);
           }
       } else {
@@ -528,8 +520,6 @@ void loop() {
                 Serial.println("[MOTOR] Returned home.");
                 if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
                 isRecipeMode = false;
-                lcd.updateContent("MAIN MENU:", "Select Operation");
-                lcd.updateStatus("System Ready", ILI9341_WHITE);
                 changeState(STATE_MAIN_MENU);
             }
           }
@@ -556,8 +546,7 @@ void startRecipeIngredient() {
    Serial.printf("[RECIPE] Target Tube: %d | Grams: %.1fg | Cycles: %d\n", 
        pendingTargetTubeIndex + 1, currentRecipeGrams, targetDispenseCycles);
 
-   lcd.updateContent("Next Ingredient:", spices[pendingTargetTubeIndex].name);
-   lcd.updateStatus("Moving to Slot " + String(pendingTargetTubeIndex + 1), ILI9341_WHITE);
+   lcd.showOperationView("MOVING", spices[pendingTargetTubeIndex].name, 0, "To Slot " + String(pendingTargetTubeIndex + 1), "Abort");
 
    int tubesToMove = (pendingTargetTubeIndex >= currentTubeIndex) ? 
                      (pendingTargetTubeIndex - currentTubeIndex) : 
@@ -579,8 +568,7 @@ void startRecipeIngredient() {
 void prepareReturnHome() {
     if (currentTubeIndex != 0) { 
         Serial.printf("[MOTOR] Returning home from Tube %d...\n", currentTubeIndex + 1);
-        lcd.updateContent("Job Finished", "Returning Home");
-        lcd.updateStatus("Homing to Tube 1", ILI9341_YELLOW);
+        lcd.showOperationView("FINISHING", "Returning Home", 0, "Homing to Slot 1", "");
         int tubesToMoveHome = TOTAL_TUBES - currentTubeIndex; 
         if (!simulationEnabled) {
             if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
@@ -590,8 +578,6 @@ void prepareReturnHome() {
         changeState(STATE_RETURNING_HOME);
     } else { 
         isRecipeMode = false;
-        lcd.updateContent("MAIN MENU:", "1. Recipes");
-        lcd.updateStatus("System Ready", ILI9341_WHITE);
         changeState(STATE_MAIN_MENU);
         if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
     }
