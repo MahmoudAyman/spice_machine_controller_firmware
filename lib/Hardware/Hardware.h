@@ -6,6 +6,7 @@
 #include <ESP32Servo.h>
 
 void initHardware();
+bool isLimitSwitchPressed();
 String identifySpice(); // Blocking version
 void startIdentifySpice(); // Async version
 bool isIdentifying();

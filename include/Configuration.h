@@ -21,6 +21,9 @@
 #define STEP_PIN        21
 #define STEP_DIR_PIN    22
 
+// Limit Switch (Sensing structure alignment)
+#define LIMIT_SWITCH_PIN 36  // SENSOR_VP pin, pulled low externally, HIGH when pressed
+
 // Discrete Buttons (Verified Hardware Mapping)
 #define BTN_UP        26 // BTN_4
 #define BTN_DOWN      14 // BTN_3
@@ -48,7 +51,7 @@
 #define VIBRATOR_PIN  -1  // Currently unused/disabled
 
 // --- Constants ---
-#define STEPS_PER_REVOLUTION 820
+#define STEPS_PER_REVOLUTION 1600
 #define TOTAL_TUBES          20
 const int STEPS_PER_TUBE = STEPS_PER_REVOLUTION / TOTAL_TUBES; 
 

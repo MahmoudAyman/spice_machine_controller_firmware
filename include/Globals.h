@@ -49,5 +49,6 @@ extern int currentSelection;
 // Function Prototypes
 void sendBleStatus();
 char getButtonKey();
+bool isLimitSwitchPressed();
 
 #endif

@@ -34,6 +34,7 @@ void initHardware() {
       Serial.println("Initializing Sensors...");
       colorDetector.begin();
       pinMode(LASER_RX_PIN, INPUT);
+      pinMode(LIMIT_SWITCH_PIN, INPUT);
   }
 
   // Buttons (Discrete Pins)
@@ -69,6 +70,14 @@ char getButtonKey() {
     if (digitalRead(BTN_OK) == LOW)    return 'N'; // GPIO 32
     
     return 0;
+}
+
+bool isLimitSwitchPressed() {
+    if (simulationEnabled) {
+        // In simulation mode, assume switch is pressed when stepper is done moving
+        return stepper.distanceToGo() == 0;
+    }
+    return digitalRead(LIMIT_SWITCH_PIN) == HIGH;
 }
 
 String identifySpice() {
