@@ -5,6 +5,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
 #include "Configuration.h"
+#include <SPI.h>
 
 #define ILI9341_ORANGE      0xFD20
 

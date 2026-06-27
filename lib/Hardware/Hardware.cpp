@@ -21,10 +21,10 @@ void initHardware() {
           digitalWrite(STEP_ENABLE_PIN, HIGH); 
       }
       
-      stepper.setMaxSpeed(200); 
-      stepper.setAcceleration(50);   
-      if (STEP_ENABLE_PIN != -1) stepper.setEnablePin(STEP_ENABLE_PIN); 
-      stepper.setPinsInverted(true, false, true);
+      stepper.setMaxSpeed(400); 
+      stepper.setAcceleration(200);   
+      // Note: STEP_ENABLE_PIN is hardwired to GND and set to -1
+      stepper.setPinsInverted(true, false, false); 
   }
 
   // Sensors

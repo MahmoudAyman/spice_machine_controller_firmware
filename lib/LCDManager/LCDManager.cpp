@@ -1,7 +1,7 @@
 #include "LCDManager.h"
 
 LCDManager::LCDManager() : 
-    _tft(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST),
+    _tft(TFT_CS, TFT_DC, TFT_RST),
     _isInitialized(false),
     _lastBleStatus(-1),
     _lastProgress(-1) {}
