@@ -342,8 +342,8 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             ack["command"] = "factory_reset";
             ack["status"] = "success";
             notifyStatus(ack);
-            delay(100); // Give time for ACK to send
-            formatStorage(); // Wipes LittleFS and reboots
+            delay(500); // Give time for ACK to send
+            factoryResetDatabase(); // Wipes configuration and reboots
         }
         else {
             Serial.printf("Unknown command type: %s\n", type);

@@ -26,6 +26,7 @@ struct Recipe {
 // --- DATA DECLARATIONS ---
 extern const int NUM_SPICES;
 extern Spice spices[];
+extern const Spice defaultSpices[];
 extern Recipe recipes[MAX_RECIPES];
 extern const Recipe defaultRecipes[];
 extern int activeRecipeCount;
@@ -40,5 +41,6 @@ void saveGlobalSpices();
 bool loadProfile(String uuid);
 void saveProfile();
 void deleteProfile(String uuid);
+void factoryResetDatabase();
 
 #endif

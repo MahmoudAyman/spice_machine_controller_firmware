@@ -1,932 +1,895 @@
-// /*
-//   Spice Mixer - Production V3.4
-// */
+/*
+  Spice Mixer - Production V3.4
+*/
 
-// #include "Configuration.h"
-// #include "Database.h"
-// #include "Globals.h"
-// #include "Hardware.h"
-
-// // --- Global Object Definitions ---
-// LCDManager lcd;
-// AccelStepper stepper = AccelStepper(AccelStepper::DRIVER, STEP_PIN, STEP_DIR_PIN);
-// Servo dispenserServo;
-// ColorDetector colorDetector = ColorDetector(CS_S0, CS_S1, CS_S2, CS_S3, CS_OUT);
-// BLEManager bleManager;
-
-// // --- Logic Variables ---
-// bool simulationEnabled = (SIMULATION_MODE == 1);
-// SystemState currentState = STATE_BOOT;
-// String userInput = "";
-// int currentTubeIndex = 0;
-// int pendingTargetTubeIndex = 0; 
-// int currentSelection = 0; 
-// int manualQuantityInput = 1;      
-// int targetDispenseCycles = 0;     
-// float currentRecipeGrams = 0.0;   
-// int servingsCount = 1; 
-// bool isTubeCurrentlyFilled = false;
-// bool isRecipeMode = false;
-// bool isInitialCheck = false;
-// bool abortTriggered = false;
-// bool remoteRequestTriggered = false;
-// Recipe remoteRecipe;
-// int currentRecipeIndex = 0;     
-// int currentIngredientIndex = 0; 
-// int lastSelectionDrawn = -1; 
-
-// // --- Timer Variables ---
-// unsigned long stateStartTime = 0;
-// unsigned long lastStatusTime = 0;
-// #define STATE_TIMEOUT(ms) (millis() - stateStartTime >= (ms))
-
-// // --- Helper Functions ---
-// void prepareReturnHome();
-// void startRecipeIngredient();
-
-// void changeState(SystemState newState) {
-//     Serial.printf("[STATE] %d -> %d\n", currentState, newState);
-//     currentState = newState;
-//     stateStartTime = millis();
-//     lastSelectionDrawn = -1; // Reset tracker for UI redraws
-//     sendBleStatus(); 
-
-//     // Update Header on State Change
-//     String header = "Spice Mixer";
-//     if (isInitialCheck) header = "MODE: System Check";
-//     else if (currentState == STATE_MAIN_MENU) header = "MAIN MENU";
-//     else if (isRecipeMode || currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) header = "DISPENSING...";
-//     else header = "MODE: Manual";
-    
-//     lcd.updateHeader(header, bleManager.getBleStatus());
-// }
-
-// void sendBleStatus() {
-//     JsonDocument doc;
-//     doc["type"] = "status";
-    
-//     String stateStr = "idle";
-//     switch (currentState) {
-//         case STATE_MAIN_MENU: stateStr = "idle"; break;
-//         case STATE_BOOT: 
-//         case STATE_SYSTEM_CHECK: 
-//         case STATE_ROTATING_TO_TARGET:
-//         case STATE_IDENTIFYING:
-//         case STATE_CHECKING_FILL:
-//             stateStr = isInitialCheck ? "booting" : "busy"; 
-//             break;
-//         case STATE_ERROR_RETURN: stateStr = "error"; break;
-//         default: stateStr = "busy"; break;
-//     }
-//     doc["state"] = stateStr;
-    
-//     if (isRecipeMode) {
-//         if (isInitialCheck) {
-//             doc["active_recipe"] = "System Check";
-//             doc["progress"] = (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100);
-//         } else {
-//             if (currentRecipeIndex == -1) {
-//                 doc["active_recipe"] = "Remote";
-//             } else {
-//                 doc["active_recipe"] = recipes[currentRecipeIndex].name;
-//             }
-            
-//             int total = (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount);
-//             if (total > 0) {
-//                 doc["progress"] = (int)(((float)currentIngredientIndex / total) * 100);
-//             } else {
-//                 doc["progress"] = 0;
-//             }
-//         }
-//     } else if (currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) {
-//         doc["active_recipe"] = "Manual";
-//         doc["progress"] = isDispensing() ? 50 : 0;
-//     }
-    
-//     bleManager.notifyStatus(doc);
-// }
-
-// void setup() {
-//   Serial.begin(115200);
-//   delay(2000); 
-//   Serial.println("\n--- Spice Dispenser Production V3.4 ---");
-
-//   Serial.println("[INIT] Initializing Storage...");
-//   if (!initStorage()) {
-//       Serial.println("[ERROR] Storage Initialization Failed!");
-//   }
-  
-//   Serial.println("[INIT] Loading Global Spices...");
-//   loadGlobalSpices();
-
-//   if (activeProfileUUID == "") {
-//       activeRecipeCount = 12;
-//       for (int i = 0; i < activeRecipeCount; i++) recipes[i] = defaultRecipes[i];
-//   }
-
-//   Serial.println("[INIT] Initializing Hardware Drivers...");
-//   initHardware(); 
-//   lcd.begin(); 
-  
-//   Serial.println("[INIT] Configuring Color Detector...");
-//   colorDetector.setCalibration(WHITE_R, WHITE_G, WHITE_B, BLACK_R, BLACK_G, BLACK_B);
-  
-//   Serial.println("[INIT] Initializing BLE...");
-//   bleManager.begin("Spice Dispenser");
-  
-//   Serial.println("[BOOT] Updating LCD...");
-//   lcd.updateContent("Spice Mixer", "Booting...");
-  
-//   Serial.println("[BOOT] Entering STATE_BOOT...");
-//   changeState(STATE_BOOT); 
-// }
-
-// void loop() {
-//   // --- Asynchronous Ticks ---
-//   tickDispenser();
-//   colorDetector.tick();
-//   bleManager.tick();
-  
-//   // Safe Edge-Triggered BLE Status Update
-//   static int lastBleStatus = -1;
-//   int currentBleStatus = bleManager.getBleStatus();
-//   if (currentBleStatus != lastBleStatus) {
-//       lastBleStatus = currentBleStatus;
-//       String header = "Spice Mixer";
-//       if (isInitialCheck) header = "MODE: System Check";
-//       else if (currentState == STATE_MAIN_MENU) header = "MAIN MENU";
-//       else if (isRecipeMode || currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) header = "DISPENSING...";
-//       else header = "MODE: Manual";
-//       lcd.updateHeader(header, currentBleStatus);
-//   }
-
-//   // Periodic status push
-//   if (millis() - lastStatusTime >= 2000) {
-//       sendBleStatus();
-//       lastStatusTime = millis();
-//   }
-
-//   // --- High Priority BLE Interrupts ---
-//   if (abortTriggered) {
-//       Serial.println("[EVENT] Abort Triggered!");
-//       abortTriggered = false;
-//       if (currentState == STATE_DISPENSING) {
-//           int remainingCycles = getRemainingDispenseCycles(); 
-//           int completedCycles = targetDispenseCycles - remainingCycles;
-//           float percentageCompleted = (float)completedCycles / (targetDispenseCycles > 0 ? targetDispenseCycles : 1);
-//           float totalExpected = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0);
-//           float actualDispensed = totalExpected * percentageCompleted;
-//           spices[pendingTargetTubeIndex].level -= (int)actualDispensed;
-//           if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
-//           saveGlobalSpices(); 
-//       }
-//       isRecipeMode = false;
-//       isInitialCheck = false;
-//       emergencyStopHardware();
-//       lcd.showOperationView("ABORTED", "Returning Home", 0, "Stopping...", "");
-//       prepareReturnHome();
-//       return;
-//   }
-
-//   // --- Physical Button Input (Edge Triggered) ---
-//   static char lastKey = 0;
-//   char rawKey = getButtonKey();
-//   char key = 0;
-//   if (rawKey != lastKey) {
-//       if (rawKey != 0) key = rawKey; // Key pressed
-//       lastKey = rawKey;
-//   }
-
-//   // Handle Physical Abort (Left Button)
-//   if (key == 'L' && !isInitialCheck) {
-//       if (currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET || 
-//           currentState == STATE_IDENTIFYING || currentState == STATE_CHECKING_FILL) {
-//           Serial.println("[EVENT] Physical Abort Triggered!");
-//           abortTriggered = true;
-//       }
-//   }
-
-//   switch (currentState) {
-//     case STATE_BOOT:
-//       if (STATE_TIMEOUT(2000)) {
-//           Serial.println("[BOOT] Starting Initial System Check...");
-//           isInitialCheck = true;
-//           isRecipeMode = false; 
-//           currentRecipeIndex = -1;
-//           currentTubeIndex = 0;
-//           pendingTargetTubeIndex = 0;
-//           if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
-//           lcd.showOperationView("BOOTING", "System Check", 0, "Initializing...", "");
-//           changeState(STATE_SYSTEM_CHECK);
-//       }
-//       break;
-
-//     case STATE_SYSTEM_CHECK:
-//       if (STATE_TIMEOUT(simulationEnabled ? 50 : 500)) {
-//           Serial.printf("[BOOT] Scanning Tube %d/20...\n", currentTubeIndex + 1);
-          
-//           // 1. Static Header
-//           lcd.updateHeader("SYSTEM CHECK...", bleManager.getBleStatus());
-          
-//           // 2. Setup Layout or Update Surgically
-//           if (currentTubeIndex == 0) {
-//               lcd.updateContent(spices[currentTubeIndex].name, "Scanning...");
-//               lcd.drawProgressBar(0, 160, true); 
-//           } else {
-//               lcd.updateSpiceName(spices[currentTubeIndex].name);
-//               lcd.updateTask("Scanning...");
-//               lcd.updateDetail("");
-//           }
-
-//           startIdentifySpice();
-//           changeState(STATE_IDENTIFYING);
-//       }
-//       break;
-
-//     case STATE_IDENTIFYING: {
-//       if (!isIdentifying()) {
-//         String detectedSpice = getIdentifiedSpice();
-//         String expectedSpice = spices[pendingTargetTubeIndex].name;
-        
-//         Serial.printf("[SENSOR] Expected: %s | Detected: %s\n", expectedSpice.c_str(), detectedSpice.c_str());
-
-//         if (detectedSpice == expectedSpice) {
-//            if (isInitialCheck) {
-//                // Surgical updates for boot
-//                lcd.updateSpiceName(detectedSpice);
-//                lcd.updateTask("VERIFIED");
-               
-//                int nextProgress = (int)(((float)(currentTubeIndex + 1) / TOTAL_TUBES) * 100);
-//                lcd.drawProgressBar(nextProgress, 160);
-               
-//                delay(100);
-
-//                if (STATE_TIMEOUT(simulationEnabled ? 50 : 800)) {
-//                    currentTubeIndex++;
-//                    if (currentTubeIndex < TOTAL_TUBES) {
-//                        pendingTargetTubeIndex = currentTubeIndex;
-//                        if (!simulationEnabled) stepper.move(STEPS_PER_TUBE);
-//                        changeState(STATE_ROTATING_TO_TARGET);
-//                    } else {
-//                        Serial.println("[BOOT] Initial Check Complete. All tubes verified.");
-//                        lcd.updateSpiceName("System Ready");
-//                        lcd.updateTask("All Slots OK");
-//                        lcd.drawProgressBar(100, 160);
-//                        delay(500);
-//                        isInitialCheck = false;
-//                        isRecipeMode = false;
-//                        prepareReturnHome();
-//                    }
-//                }
-//            } else {
-//                lcd.updateTask("IDENTIFIED");
-//                lcd.updateDetail("Match Confirmed");
-//                delay(200);
-//                changeState(STATE_CHECKING_FILL); 
-//            }
-//         } else {
-//            if (isInitialCheck) {
-//                 lcd.updateContent("MISMATCH!", "Found: " + detectedSpice);
-//                 lcd.updateStatus("Expected: " + expectedSpice, ILI9341_RED);
-//            } else {
-//                 lcd.showOperationView("MISMATCH!", "Found: " + detectedSpice, 0, "ERROR: WRONG SPICE", "Exit");
-//            }
-//            bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1);
-//            if (STATE_TIMEOUT(3000)) {
-//                if (isInitialCheck) changeState(STATE_EMPTY_RETRY); 
-//                else prepareReturnHome();
-//            }
-//         }
-//       } else if (!isInitialCheck) {
-//           lcd.updateTask("IDENTIFYING...");
-//           lcd.updateDetail("Scanning Label");
-//       }
-//       break;
-//     }
-
-//     case STATE_MAIN_MENU: {
-//       if (remoteRequestTriggered) {
-//           Serial.println("[EVENT] Remote Dispense Order Received via BLE!");
-//           remoteRequestTriggered = false;
-//           isRecipeMode = true;
-//           currentRecipeIndex = -1; 
-//           currentIngredientIndex = 0;
-//           servingsCount = 1;
-//           lcd.showOperationView("REMOTE ORDER", "Processing...", 0, "App Controlled", "Abort");
-//           startRecipeIngredient();
-//           break;
-//       }
-
-//       if (currentSelection != lastSelectionDrawn) {
-//           const char* menuOptions[] = {"Recipes", "Manual Control"};
-//           lcd.showMenu("MAIN MENU", menuOptions, 2, currentSelection, "", "Select");
-//           lastSelectionDrawn = currentSelection;
-//       }
-
-//       if (key == 'U') {
-//           currentSelection = 0;
-//       } else if (key == 'D') {
-//           currentSelection = 1;
-//       } else if (key == 'N') {
-//           if (currentSelection == 0) {
-//               currentSelection = 0; 
-//               changeState(STATE_RECIPE_SELECT);
-//           } else {
-//               currentSelection = 0; 
-//               changeState(STATE_AWAITING_INPUT);
-//           }
-//       }
-//       break;
-//     }
-
-//     case STATE_RECIPE_SELECT: {
-//       if (currentSelection != lastSelectionDrawn) {
-//           const char* recipeNames[activeRecipeCount];
-//           for (int i = 0; i < activeRecipeCount; i++) recipeNames[i] = recipes[i].name.c_str();
-//           lcd.showMenu("SELECT RECIPE", recipeNames, activeRecipeCount, currentSelection, "Back", "Select");
-//           lastSelectionDrawn = currentSelection;
-//       }
-
-//       if (key == 'U') {
-//           if (currentSelection > 0) currentSelection--;
-//       } else if (key == 'D') {
-//           if (currentSelection < activeRecipeCount - 1) currentSelection++;
-//       } else if (key == 'N') {
-//           currentRecipeIndex = currentSelection;
-//           currentSelection = 1; 
-//           changeState(STATE_RECIPE_SERVINGS_INPUT);
-//       } else if (key == 'L') {
-//           currentSelection = 0;
-//           changeState(STATE_MAIN_MENU);
-//       }
-//       break;
-//     }
-
-//     case STATE_RECIPE_SERVINGS_INPUT: {
-//       if (currentSelection != lastSelectionDrawn) {
-//           lcd.showNumericSelection("SERVINGS", String(currentSelection), "Portions", "Back", "Start");
-//           lastSelectionDrawn = currentSelection;
-//       }
-
-//       if (key == 'U') {
-//           currentSelection++;
-//       } else if (key == 'D') {
-//           if (currentSelection > 1) currentSelection--;
-//       } else if (key == 'N') {
-//            servingsCount = currentSelection;
-//            currentIngredientIndex = 0;    
-//            isRecipeMode = true;
-//            lcd.showOperationView("PREPARING", recipes[currentRecipeIndex].name, 0, "Initializing...", "Abort");
-//            startRecipeIngredient(); 
-//       } else if (key == 'L') {
-//            currentSelection = currentRecipeIndex;
-//            changeState(STATE_RECIPE_SELECT);
-//       }
-//       break;
-//     }
-
-//     case STATE_AWAITING_INPUT: {
-//       if (currentSelection != lastSelectionDrawn) {
-//           lcd.showNumericSelection("SELECT TUBE", String(currentSelection + 1), "Slot Number", "Back", "Select");
-//           lastSelectionDrawn = currentSelection;
-//       }
-
-//       if (key == 'U') {
-//           if (currentSelection > 0) currentSelection--;
-//       } else if (key == 'D') {
-//           if (currentSelection < TOTAL_TUBES - 1) currentSelection++;
-//       } else if (key == 'N') {
-//           pendingTargetTubeIndex = currentSelection;
-//           currentSelection = 1; 
-//           changeState(STATE_AWAITING_QUANTITY_INPUT);
-//       } else if (key == 'L') {
-//           currentSelection = 1; 
-//           changeState(STATE_MAIN_MENU);
-//       }
-//       break;
-//     }
-
-//     case STATE_AWAITING_QUANTITY_INPUT: {
-//       if (currentSelection != lastSelectionDrawn) {
-//           lcd.showNumericSelection("QUANTITY", String(currentSelection), "Theelepels", "Back", "Start");
-//           lastSelectionDrawn = currentSelection;
-//       }
-
-//       if (key == 'U') {
-//           currentSelection++;
-//       } else if (key == 'D') {
-//           if (currentSelection > 1) currentSelection--;
-//       } else if (key == 'N') {
-//               manualQuantityInput = currentSelection;
-//               targetDispenseCycles = manualQuantityInput * CYCLES_PER_THEELEPEL;
-              
-//               int tubesToMove = (pendingTargetTubeIndex >= currentTubeIndex) ? 
-//                                 (pendingTargetTubeIndex - currentTubeIndex) : 
-//                                 (TOTAL_TUBES - currentTubeIndex + pendingTargetTubeIndex);
-              
-//               if (tubesToMove > 0) {
-//                 Serial.printf("[MANUAL] Rotating %d tubes to target %d...\n", tubesToMove, pendingTargetTubeIndex + 1);
-//                 lcd.showOperationView("ROTATING", "Slot " + String(pendingTargetTubeIndex + 1), 0, "Motor Running", "Abort");
-//                 if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
-//                 stepper.move(tubesToMove * STEPS_PER_TUBE);
-//                 currentTubeIndex = pendingTargetTubeIndex; 
-//                 changeState(STATE_ROTATING_TO_TARGET);
-//               } else {
-//                  Serial.println("[MANUAL] Already at target tube.");
-//                  lcd.showOperationView("ARRIVED", "Slot " + String(pendingTargetTubeIndex + 1), 100, "Stabilizing...", "Abort");
-//                  changeState(STATE_IDENTIFYING); 
-//               }
-//       } else if (key == 'L') {
-//           currentSelection = pendingTargetTubeIndex;
-//           changeState(STATE_AWAITING_INPUT);
-//       }
-//       break;
-//     }
-
-//     case STATE_ROTATING_TO_TARGET: {
-//       if (!isInitialCheck) {
-//           lcd.updateHeader("DISPENSING...", bleManager.getBleStatus());
-//           lcd.updateTask("Moving to Slot " + String(pendingTargetTubeIndex + 1));
-//           lcd.updateDetail(""); 
-//       }
-//       if (simulationEnabled) {
-//           if (STATE_TIMEOUT(50)) { 
-//               startIdentifySpice();
-//               changeState(STATE_IDENTIFYING);
-//           }
-//       } else {
-//           stepper.run();
-//           if (stepper.distanceToGo() == 0) {
-//             if (STATE_TIMEOUT(500)) { 
-//                 Serial.println("[MOTOR] Rotation complete.");
-//                 startIdentifySpice();
-//                 changeState(STATE_IDENTIFYING);
-//             }
-//           }
-//       }
-//       break;
-//     }
-
-//     case STATE_CHECKING_FILL: {
-//       if (!isInitialCheck) {
-//           lcd.updateTask("VERIFYING LEVEL");
-//           lcd.updateDetail("Checking Sensor...");
-//       }
-//       if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) { 
-//           int laserState = simulationEnabled ? HIGH : digitalRead(LASER_RX_PIN);
-//           if (laserState == HIGH) { 
-//             if (!isInitialCheck) {
-//                 lcd.updateTask("READY");
-//                 lcd.updateDetail("Level OK");
-//                 delay(200);
-//             }
-//             startDispense(targetDispenseCycles);
-//             changeState(STATE_DISPENSING);
-//           } else {
-//             if (!isInitialCheck) {
-//                 lcd.showOperationView("EMPTY!", spices[pendingTargetTubeIndex].name, 0, "Needs Refill", "Exit");
-//             }
-//             bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
-//             changeState(STATE_EMPTY_RETRY);
-//           }
-//       }
-//       break;
-//     }
-
-//     case STATE_EMPTY_RETRY: {
-//       lcd.showOperationView("ALERT", "Refill Needed", 0, "Press OK to Retry", "Back");
-//       char key = getButtonKey();
-//       if (key == 'N') {
-//           Serial.println("[EVENT] Retrying identification/fill check...");
-//           if (isInitialCheck) changeState(STATE_SYSTEM_CHECK);
-//           else changeState(STATE_CHECKING_FILL);
-//       } 
-//       else if (key == 'L') {
-//           Serial.println("[EVENT] User cancelled after empty/wrong spice.");
-//           isInitialCheck = false;
-//           isRecipeMode = false;
-//           prepareReturnHome();
-//       }
-//       break;
-//     }
-
-//     case STATE_DISPENSING: {
-//       static int lastRem = -1;
-//       int currentRem = getRemainingDispenseCycles();
-      
-//       if (!isInitialCheck) {
-//           lcd.updateTask("DISPENSING...");
-//           if (currentRem != lastRem) {
-//               lastRem = currentRem;
-//               lcd.updateDetail("Cycles Left: " + String(lastRem));
-              
-//               int totalItems = isRecipeMode ? (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount) : 1;
-//               float baseProgress = ((float)currentIngredientIndex / totalItems) * 100.0;
-//               float itemContribution = (1.0 / totalItems) * 100.0;
-//               float itemProgress = (1.0 - (float)currentRem / (targetDispenseCycles > 0 ? targetDispenseCycles : 1));
-//               int globalProgress = (int)(baseProgress + (itemProgress * itemContribution));
-              
-//               lcd.drawProgressBar(globalProgress, 160);
-//           }
-//       }
-      
-//       if (!isDispensing()) {
-//           Serial.println("[DISPENSER] Cycle complete.");
-//           lastRem = -1;
-//           float dispensed = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0); 
-//           spices[pendingTargetTubeIndex].level -= (int)dispensed;
-//           if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
-//           saveGlobalSpices(); 
-          
-//           if (spices[pendingTargetTubeIndex].level < 15) bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
-
-//           if (isRecipeMode) {
-//             currentIngredientIndex++;
-//             int count = (currentRecipeIndex == -1) ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount;
-//             if (currentIngredientIndex < count) {
-//                startRecipeIngredient();
-//             } else {
-//                lcd.showOperationView("COMPLETE", "Recipe Finished", 100, "Enjoy!", "Back");
-//                delay(1500);
-//                prepareReturnHome();
-//             }
-//           } else {
-//             lcd.showOperationView("COMPLETE", "Manual Done", 100, "Enjoy!", "Back");
-//             delay(1500);
-//             prepareReturnHome(); 
-//           }
-//       }
-//       break;
-//     }
-
-//     case STATE_RETURNING_HOME: {
-//       lcd.showOperationView("HOMING", "Moving to Slot 1", 50, "Clearing Area", "");
-//       if (simulationEnabled) {
-//           if (STATE_TIMEOUT(100)) {
-//               if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
-//               isRecipeMode = false;
-//               changeState(STATE_MAIN_MENU);
-//           }
-//       } else {
-//           stepper.run();
-//           if (stepper.distanceToGo() == 0) {
-//             if (STATE_TIMEOUT(500)) {
-//                 Serial.println("[MOTOR] Returned home.");
-//                 if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
-//                 isRecipeMode = false;
-//                 changeState(STATE_MAIN_MENU);
-//             }
-//           }
-//       }
-//       break;
-//     }
-    
-//     default: break;
-//   }
-// }
-
-// void startRecipeIngredient() {
-//    RecipeItem item;
-//    if (currentRecipeIndex == -1) {
-//        item = remoteRecipe.ingredients[currentIngredientIndex];
-//    } else {
-//        item = recipes[currentRecipeIndex].ingredients[currentIngredientIndex];
-//    }
-   
-//    pendingTargetTubeIndex = item.spiceIndex;
-//    currentRecipeGrams = item.quantityGrams * servingsCount; 
-//    targetDispenseCycles = (int)(currentRecipeGrams / GRAMS_PER_CYCLE);
-   
-//    Serial.printf("[RECIPE] Target Tube: %d | Grams: %.1fg | Cycles: %d\n", 
-//        pendingTargetTubeIndex + 1, currentRecipeGrams, targetDispenseCycles);
-
-//    if (!isInitialCheck) {
-//        // Enhanced Stability: Use surgical updates to keep progress bar drawn
-//        lcd.updateHeader("DISPENSING...", bleManager.getBleStatus());
-//        lcd.setActionBar("Abort"); // Ensure button is visible
-//        if (currentIngredientIndex == 0) {
-//            // First ingredient: Full setup
-//            lcd.updateContent(spices[pendingTargetTubeIndex].name, "PREPARING");
-//            lcd.drawProgressBar(0, 160, true);
-//        } else {
-//            // Subsequent ingredients: Surgical updates to preserve Progress Bar
-//            lcd.updateSpiceName(spices[pendingTargetTubeIndex].name);
-//            lcd.updateTask("PREPARING");
-//            lcd.updateDetail("");
-//        }
-//    }
-
-//    int tubesToMove = (pendingTargetTubeIndex >= currentTubeIndex) ? 
-//                      (pendingTargetTubeIndex - currentTubeIndex) : 
-//                      (TOTAL_TUBES - currentTubeIndex + pendingTargetTubeIndex);
-   
-//    if (tubesToMove > 0) {
-//      if (!simulationEnabled) {
-//          if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
-//          stepper.move(tubesToMove * STEPS_PER_TUBE);
-//      }
-//      currentTubeIndex = pendingTargetTubeIndex; 
-//      changeState(STATE_ROTATING_TO_TARGET);
-//    } else {
-//       startIdentifySpice();
-//       changeState(STATE_IDENTIFYING); 
-//    }
-// }
-
-// void prepareReturnHome() {
-//     if (currentTubeIndex != 0) { 
-//         Serial.printf("[MOTOR] Returning home from Tube %d...\n", currentTubeIndex + 1);
-//         lcd.showOperationView("FINISHING", "Returning Home", 0, "Homing to Slot 1", "");
-//         int tubesToMoveHome = TOTAL_TUBES - currentTubeIndex; 
-//         if (!simulationEnabled) {
-//             if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
-//             stepper.move(tubesToMoveHome * STEPS_PER_TUBE);
-//         }
-//         currentTubeIndex = 0;
-//         changeState(STATE_RETURNING_HOME);
-//     } else { 
-//         isRecipeMode = false;
-//         changeState(STATE_MAIN_MENU);
-//         if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
-//     }
-// }
-
-
-// #include <Arduino.h>
-// #include <AccelStepper.h>
-// #include "Configuration.h"
-
-// AccelStepper testStepper(AccelStepper::DRIVER, STEP_PIN, STEP_DIR_PIN);
-
-// unsigned long lastStateChange = 0;
-// int testStep = 1;
-// bool stateInitialized = false;
-
-// void setup() {
-//     Serial.begin(115200);
-//     delay(1000);
-//     Serial.println("\n--- Stepper Motor Non-Blocking Hardware Test ---");
-    
-//     testStepper.setMaxSpeed(200);      // Keep speed conservative for testing
-//     testStepper.setAcceleration(100);
-// }
-
-// void loop() {
-//     // Run the stepper constantly—never block this line
-//     testStepper.run();
-
-//     // Check if the current movement phase is finished
-//     if (testStepper.distanceToGo() == 0) {
-//         if (!stateInitialized) {
-//             lastStateChange = millis();
-//             stateInitialized = true;
-//             Serial.printf("[STATE %d] Target reached. Pausing for 2 seconds...\n", testStep);
-//         }
-
-//         // Non-blocking 2-second delay between steps
-//         if (millis() - lastStateChange >= 2000) {
-//             stateInitialized = false;
-//             testStep++;
-
-//             switch (testStep) {
-//                 case 2:
-//                     Serial.println("Moving 1 Full Revolution Clockwise...");
-//                     testStepper.move(STEPS_PER_REVOLUTION);
-//                     break;
-//                 case 3:
-//                     Serial.println("Moving 1 Full Revolution Counter-Clockwise...");
-//                     testStepper.move(-STEPS_PER_REVOLUTION);
-//                     break;
-//                 case 4:
-//                     Serial.println("Moving 1 Tube forward...");
-//                     testStepper.move(STEPS_PER_TUBE);
-//                     break;
-//                 default:
-//                     Serial.println("--- Loop Completed. Restarting Test Cycle ---");
-//                     testStep = 1;
-//                     break;
-//             }
-//         }
-//     }
-// }
-
-#include <Arduino.h>
 #include "Configuration.h"
-#include "ColorDetector.h"
-#include "TubeColors.h"
-#include <AccelStepper.h>
+#include "Database.h"
+#include "Globals.h"
+#include "Hardware.h"
 
-// Instantiate stepper
-AccelStepper testStepper(AccelStepper::DRIVER, STEP_PIN, STEP_DIR_PIN);
+// --- Global Object Definitions ---
+LCDManager lcd;
+AccelStepper stepper = AccelStepper(AccelStepper::DRIVER, STEP_PIN, STEP_DIR_PIN);
+Servo dispenserServo;
+ColorDetector colorDetector = ColorDetector(CS_S0, CS_S1, CS_S2, CS_S3, CS_OUT);
+BLEManager bleManager;
 
-// Instantiate color detector
-ColorDetector colorSensor(CS_S0, CS_S1, CS_S2, CS_S3, CS_OUT);
+// --- Logic Variables ---
+bool simulationEnabled = (SIMULATION_MODE == 1);
+SystemState currentState = STATE_BOOT;
+String userInput = "";
 
-// Alignment States for Advanced Testing
-enum AlignState {
-    ALIGN_IDLE,
-    ALIGN_EXITING,          // Leaving the current tube protrusion (waiting for switch to go LOW)
-    ALIGN_ENTERING,         // Searching for the next tube protrusion (waiting for switch to go HIGH)
-    ALIGN_POST_TRIGGER,     // Micro-stepping an additional -110 steps to center/align the tube
-    ALIGN_READING_COLOR     // Motor stopped, reading and classifying the tube color
+enum SetupState {
+    SETUP_INIT_TUBE,
+    SETUP_ROTATE_EXITING,
+    SETUP_ROTATE_ENTERING,
+    SETUP_ROTATE_ALIGNING,
+    SETUP_READ_COLOR,
+    SETUP_AWAITING_NAME
 };
+SetupState setupSubState = SETUP_INIT_TUBE;
+unsigned long setupDebounceTimer = 0;
+int currentTubeIndex = 0;
+int pendingTargetTubeIndex = 0; 
+int currentSelection = 0; 
+int manualQuantityInput = 1;      
+int targetDispenseCycles = 0;     
+float currentRecipeGrams = 0.0;   
+int servingsCount = 1; 
+bool isTubeCurrentlyFilled = false;
+bool isRecipeMode = false;
+bool isInitialCheck = false;
+bool abortTriggered = false;
+bool remoteRequestTriggered = false;
+Recipe remoteRecipe;
+int currentRecipeIndex = 0;     
+int currentIngredientIndex = 0; 
+int lastSelectionDrawn = -1; 
 
-AlignState currentAlignState = ALIGN_IDLE;
-bool searchForBlack = false;       // If true, automatically advances until BLACK is detected
-const float SEARCH_SPEED = -150.0; // Negative speed for normal rotation direction
-const int POST_TRIGGER_OFFSET = -110; // Extra steps to align after trigger
+// --- Timer Variables ---
+unsigned long stateStartTime = 0;
+unsigned long lastStatusTime = 0;
+#define STATE_TIMEOUT(ms) (millis() - stateStartTime >= (ms))
+
+// --- Helper Functions ---
+void prepareReturnHome();
+void startRecipeIngredient();
+
+void changeState(SystemState newState) {
+    Serial.printf("[STATE] %d -> %d\n", currentState, newState);
+    currentState = newState;
+    stateStartTime = millis();
+    lastSelectionDrawn = -1; // Reset tracker for UI redraws
+    sendBleStatus(); 
+
+    // Update Header on State Change
+    String header = "Spice Mixer";
+    if (isInitialCheck) header = "MODE: System Check";
+    else if (currentState == STATE_MAIN_MENU) header = "MAIN MENU";
+    else if (isRecipeMode || currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) header = "DISPENSING...";
+    else header = "MODE: Manual";
+    
+    lcd.updateHeader(header, bleManager.getBleStatus());
+}
+
+void sendBleStatus() {
+    JsonDocument doc;
+    doc["type"] = "status";
+    
+    String stateStr = "idle";
+    switch (currentState) {
+        case STATE_MAIN_MENU: stateStr = "idle"; break;
+        case STATE_BOOT: 
+        case STATE_SYSTEM_CHECK: 
+        case STATE_ROTATING_TO_TARGET:
+        case STATE_IDENTIFYING:
+        case STATE_CHECKING_FILL:
+            stateStr = isInitialCheck ? "booting" : "busy"; 
+            break;
+        case STATE_ERROR_RETURN: stateStr = "error"; break;
+        default: stateStr = "busy"; break;
+    }
+    doc["state"] = stateStr;
+    
+    if (isRecipeMode) {
+        if (isInitialCheck) {
+            doc["active_recipe"] = "System Check";
+            doc["progress"] = (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100);
+        } else {
+            if (currentRecipeIndex == -1) {
+                doc["active_recipe"] = "Remote";
+            } else {
+                doc["active_recipe"] = recipes[currentRecipeIndex].name;
+            }
+            
+            int total = (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount);
+            if (total > 0) {
+                doc["progress"] = (int)(((float)currentIngredientIndex / total) * 100);
+            } else {
+                doc["progress"] = 0;
+            }
+        }
+    } else if (currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) {
+        doc["active_recipe"] = "Manual";
+        doc["progress"] = isDispensing() ? 50 : 0;
+    }
+    
+    bleManager.notifyStatus(doc);
+}
 
 void setup() {
-    Serial.begin(115200);
-    delay(2000);
-    Serial.println("\n==============================================");
-    Serial.println("   LIMIT SWITCH & COLOR SENSOR INTEGRATION");
-    Serial.println("==============================================");
-    Serial.printf("Limit Switch GPIO Pin : %d (SENSOR_VP)\n", LIMIT_SWITCH_PIN);
-    Serial.printf("Color Sensor Pins     : S0=%d, S1=%d, S2=%d, S3=%d, OUT=%d\n", CS_S0, CS_S1, CS_S2, CS_S3, CS_OUT);
-    Serial.println("Direction Convention  : ");
-    Serial.println("  - Normal Carousel Rotation: NEGATIVE (Command '2')");
-    Serial.println("  - Reverse/Adjustment: POSITIVE (Command '1')");
-    Serial.println("Tuning Offset         : -110 steps after switch trigger");
-    Serial.println("==============================================\n");
+  Serial.begin(115200);
+  delay(2000); 
+  Serial.println("\n--- Spice Dispenser Production V3.4 ---");
 
-    // Configure pins
-    pinMode(LIMIT_SWITCH_PIN, INPUT);
-    colorSensor.begin();
+  Serial.println("[INIT] Initializing Storage...");
+  if (!initStorage()) {
+      Serial.println("[ERROR] Storage Initialization Failed!");
+  }
+  
+  Serial.println("[INIT] Loading Global Spices...");
+  loadGlobalSpices();
 
-    // Initialize stepper parameters
-    testStepper.setMaxSpeed(400);
-    testStepper.setAcceleration(200);
+  if (activeProfileUUID == "") {
+      activeRecipeCount = 12;
+      for (int i = 0; i < activeRecipeCount; i++) recipes[i] = defaultRecipes[i];
+  }
 
-    Serial.println("Serial Monitor Controls:");
-    Serial.println("  - Enter '1' : Move stepper +10 steps (Positive / Reverse Nudge)");
-    Serial.println("  - Enter '2' : Move stepper -10 steps (Negative / Normal Nudge)");
-    Serial.println("  - Enter '3' : Advance to Next Tube, stop, apply tuning offset, read color");
-    Serial.println("  - Enter '5' : Autonomous Scan: Rotate slot-by-slot until BLACK tube is found!");
-    Serial.println("  - Enter '6' : Read current color values mapped to RGB (average of 10 samples)");
-    Serial.println("  - Enter 's' : Emergency STOP active search immediately");
-    Serial.println("----------------------------------------------\n");
+  Serial.println("[INIT] Initializing Hardware Drivers...");
+  initHardware(); 
+  lcd.begin(); 
+  
+  Serial.println("[INIT] Configuring Color Detector...");
+  colorDetector.setCalibration(WHITE_R, WHITE_G, WHITE_B, BLACK_R, BLACK_G, BLACK_B);
+  
+  Serial.println("[INIT] Initializing BLE...");
+  bleManager.begin("Spice Dispenser");
+  
+  Serial.println("[BOOT] Updating LCD...");
+  lcd.updateContent("Spice Mixer", "Booting...");
+  
+  Serial.println("[BOOT] Entering STATE_BOOT...");
+  changeState(STATE_BOOT); 
 }
 
 void loop() {
-    static int lastSwitchState = -1;
-    int currentSwitchState = digitalRead(LIMIT_SWITCH_PIN);
+  // --- Serial Command Parser (Factory Reset) ---
+  if (currentState != STATE_INITIAL_SETUP && Serial.available() > 0) {
+      char serCmd = Serial.peek();
+      if (serCmd == 'F' || serCmd == 'f') {
+          Serial.read(); // Consume
+          Serial.println("[SERIAL] Received Factory Reset Command!");
+          factoryResetDatabase();
+      }
+  }
 
-    // Edge detection for limit switch
-    if (currentSwitchState != lastSwitchState) {
-        if (currentSwitchState == HIGH) {
-            Serial.printf("[SWITCH] >>> TRIGGERED / PRESSED (HIGH) at millis: %lu <<<\n", millis());
+  // --- Asynchronous Ticks ---
+  tickDispenser();
+  colorDetector.tick();
+  bleManager.tick();
+  
+  // Safe Edge-Triggered BLE Status Update
+  static int lastBleStatus = -1;
+  int currentBleStatus = bleManager.getBleStatus();
+  if (currentBleStatus != lastBleStatus) {
+      lastBleStatus = currentBleStatus;
+      String header = "Spice Mixer";
+      if (isInitialCheck) header = "MODE: System Check";
+      else if (currentState == STATE_MAIN_MENU) header = "MAIN MENU";
+      else if (isRecipeMode || currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) header = "DISPENSING...";
+      else header = "MODE: Manual";
+      lcd.updateHeader(header, currentBleStatus);
+  }
+
+  // Periodic status push
+  if (millis() - lastStatusTime >= 2000) {
+      sendBleStatus();
+      lastStatusTime = millis();
+  }
+
+  // --- High Priority BLE Interrupts ---
+  if (abortTriggered) {
+      Serial.println("[EVENT] Abort Triggered!");
+      abortTriggered = false;
+      if (currentState == STATE_DISPENSING) {
+          int remainingCycles = getRemainingDispenseCycles(); 
+          int completedCycles = targetDispenseCycles - remainingCycles;
+          float percentageCompleted = (float)completedCycles / (targetDispenseCycles > 0 ? targetDispenseCycles : 1);
+          float totalExpected = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0);
+          float actualDispensed = totalExpected * percentageCompleted;
+          spices[pendingTargetTubeIndex].level -= (int)actualDispensed;
+          if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
+          saveGlobalSpices(); 
+      }
+      isRecipeMode = false;
+      isInitialCheck = false;
+      emergencyStopHardware();
+      lcd.showOperationView("ABORTED", "Returning Home", 0, "Stopping...", "");
+      prepareReturnHome();
+      return;
+  }
+
+  // --- Physical Button Input (Edge Triggered) ---
+  static char lastKey = 0;
+  char rawKey = getButtonKey();
+  char key = 0;
+  if (rawKey != lastKey) {
+      if (rawKey != 0) key = rawKey; // Key pressed
+      lastKey = rawKey;
+  }
+
+  // Handle Physical Abort (Left Button)
+  if (key == 'L' && !isInitialCheck) {
+      if (currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET || 
+          currentState == STATE_IDENTIFYING || currentState == STATE_CHECKING_FILL) {
+          Serial.println("[EVENT] Physical Abort Triggered!");
+          abortTriggered = true;
+      }
+  }
+
+  switch (currentState) {
+    case STATE_BOOT:
+      if (STATE_TIMEOUT(2000)) {
+          isRecipeMode = false; 
+          currentRecipeIndex = -1;
+          currentTubeIndex = 0;
+          pendingTargetTubeIndex = 0;
+          
+          if (!isMachineConfigured) {
+              Serial.println("[BOOT] Machine not configured. Entering Initial Setup...");
+              if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
+              setupSubState = SETUP_INIT_TUBE;
+              userInput = "";
+              isInitialCheck = false;
+              lcd.showOperationView("INITIAL SETUP", "Welcome!", 0, "Initializing...", "");
+              changeState(STATE_INITIAL_SETUP);
+          } else {
+              Serial.println("[BOOT] Machine configured. Bypass system check, entering Main Menu...");
+              isInitialCheck = false;
+              changeState(STATE_MAIN_MENU);
+          }
+      }
+      break;
+
+    case STATE_INITIAL_SETUP: {
+      const float SEARCH_SPEED = -250.0;
+      
+      switch (setupSubState) {
+          case SETUP_INIT_TUBE: {
+              Serial.printf("[SETUP] Starting Slot %d/20 positioning...\n", currentTubeIndex + 1);
+              lcd.showOperationView("SETUP: SLOT " + String(currentTubeIndex + 1), 
+                                    "Aligning...", 
+                                    (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100), 
+                                    "Moving carousel", "");
+              if (simulationEnabled) {
+                  setupSubState = SETUP_READ_COLOR;
+              } else {
+                  if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
+                  if (isLimitSwitchPressed()) {
+                      setupSubState = SETUP_ROTATE_EXITING;
+                  } else {
+                      setupDebounceTimer = millis(); // Initialize search timer
+                      setupSubState = SETUP_ROTATE_ENTERING;
+                  }
+              }
+              break;
+          }
+
+          case SETUP_ROTATE_EXITING: {
+              stepper.setSpeed(SEARCH_SPEED);
+              stepper.runSpeed();
+              if (!isLimitSwitchPressed()) {
+                  Serial.println("[SETUP] Cleared current slot. Finding next edge...");
+                  setupDebounceTimer = millis(); // Initialize search timer
+                  setupSubState = SETUP_ROTATE_ENTERING;
+              }
+              break;
+          }
+
+          case SETUP_ROTATE_ENTERING: {
+              stepper.setSpeed(SEARCH_SPEED);
+              stepper.runSpeed();
+              
+              if (!isLimitSwitchPressed()) {
+                  setupDebounceTimer = millis(); // Reset timer if switch goes low
+              }
+              
+              if (millis() - setupDebounceTimer >= 10) { // Must be pressed continuously for 10ms
+                  Serial.println("[SETUP] Limit switch triggered (debounced)! Rotating slowly to release edge...");
+                  setupDebounceTimer = millis(); // Initialize release timer
+                  setupSubState = SETUP_ROTATE_ALIGNING;
+              }
+              break;
+          }
+
+          case SETUP_ROTATE_ALIGNING: {
+              const float SLOW_ALIGN_SPEED = -50.0; // Slower speed for precision centering
+              stepper.setSpeed(SLOW_ALIGN_SPEED);
+              stepper.runSpeed();
+              
+              if (isLimitSwitchPressed()) {
+                  setupDebounceTimer = millis(); // Reset timer if switch goes high
+              }
+              
+              if (millis() - setupDebounceTimer >= 20) { // Must be released continuously for 20ms
+                  Serial.println("[SETUP] Limit switch released (debounced). Alignment complete.");
+                  stepper.stop();
+                  setupSubState = SETUP_READ_COLOR;
+              }
+              break;
+          }
+
+          case SETUP_READ_COLOR: {
+              Serial.printf("[SETUP] Reading sensor raw pulse widths for Slot %d/20...\n", currentTubeIndex + 1);
+              lcd.showOperationView("SETUP: SLOT " + String(currentTubeIndex + 1), 
+                                    "Calibrating...", 
+                                    (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100), 
+                                    "Reading Sensor", "");
+              long sumR = 0, sumG = 0, sumB = 0;
+              if (simulationEnabled) {
+                  sumR = defaultSpices[currentTubeIndex].r_val * 3;
+                  sumG = defaultSpices[currentTubeIndex].g_val * 3;
+                  sumB = defaultSpices[currentTubeIndex].b_val * 3;
+              } else {
+                  for (int i = 0; i < 3; i++) {
+                      sumR += colorDetector.readRawColor('r'); delay(15);
+                      sumG += colorDetector.readRawColor('g'); delay(15);
+                      sumB += colorDetector.readRawColor('b'); delay(15);
+                  }
+              }
+              spices[currentTubeIndex].r_val = sumR / 3;
+              spices[currentTubeIndex].g_val = sumG / 3;
+              spices[currentTubeIndex].b_val = sumB / 3;
+
+              Serial.printf("[SETUP] Slot %d raw pulse widths -> R: %d | G: %d | B: %d\n", 
+                  currentTubeIndex + 1, spices[currentTubeIndex].r_val, spices[currentTubeIndex].g_val, spices[currentTubeIndex].b_val);
+
+              Serial.printf("[SETUP] Enter name for Slot %d (Press Enter for default '%s'):\n", 
+                  currentTubeIndex + 1, defaultSpices[currentTubeIndex].name.c_str());
+
+              lcd.showOperationView("INPUT NAME", 
+                                    "Slot " + String(currentTubeIndex + 1), 
+                                    (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100), 
+                                    "Use Serial Mon", "");
+              
+              userInput = "";
+              setupSubState = SETUP_AWAITING_NAME;
+              break;
+          }
+
+          case SETUP_AWAITING_NAME: {
+              static bool lastWasCR = false;
+              while (Serial.available() > 0) {
+                  char c = Serial.read();
+                  if (c == '\n' && lastWasCR) {
+                      lastWasCR = false;
+                      continue; // Skip the LF if it immediately follows a CR
+                  }
+                  lastWasCR = (c == '\r');
+
+                  if (c == '\n' || c == '\r') {
+                      userInput.trim();
+                      
+                      // Sanitize name: keep only alphanumeric characters and single spaces
+                      String sanitizedName = "";
+                      bool lastWasSpace = false;
+                      for (unsigned int k = 0; k < userInput.length(); k++) {
+                          char ch = userInput[k];
+                          if (isalnum(ch)) {
+                              sanitizedName += ch;
+                              lastWasSpace = false;
+                          } else if (isspace(ch) || ch == '_' || ch == '-') {
+                              if (!lastWasSpace && sanitizedName.length() > 0) {
+                                  sanitizedName += ' ';
+                                  lastWasSpace = true;
+                              }
+                          }
+                      }
+                      sanitizedName.trim();
+
+                      String finalName = sanitizedName;
+                      if (finalName.length() == 0) {
+                          finalName = defaultSpices[currentTubeIndex].name;
+                      }
+
+                      // Verify uniqueness among slots 0 to currentTubeIndex - 1
+                      bool isDuplicate = false;
+                      for (int s = 0; s < currentTubeIndex; s++) {
+                          String existingUpper = spices[s].name;
+                          existingUpper.toUpperCase();
+                          String checkUpper = finalName;
+                          checkUpper.toUpperCase();
+                          if (existingUpper == checkUpper) {
+                              isDuplicate = true;
+                              break;
+                          }
+                      }
+
+                      if (isDuplicate) {
+                          Serial.printf("\n[ERROR] Name '%s' is already assigned to a slot! All spice tube names must be unique.\n", finalName.c_str());
+                          Serial.printf("[SETUP] Please enter a UNIQUE name for Slot %d (Press Enter for default '%s'):\n", 
+                                        currentTubeIndex + 1, defaultSpices[currentTubeIndex].name.c_str());
+                          userInput = "";
+                          break;
+                      }
+
+                      spices[currentTubeIndex].name = finalName;
+                      spices[currentTubeIndex].level = 100;
+
+                      Serial.printf("\n[SETUP] Slot %d successfully mapped to '%s'\n", currentTubeIndex + 1, finalName.c_str());
+
+                      currentTubeIndex++;
+                      if (currentTubeIndex < TOTAL_TUBES) {
+                          setupSubState = SETUP_INIT_TUBE;
+                      } else {
+                          Serial.println("[SETUP] All slots configured. Saving to LittleFS...");
+                          saveGlobalSpices();
+                          if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
+                          prepareReturnHome();
+                      }
+                      userInput = "";
+                      break;
+                  } else if (c == 8 || c == 127) { // Backspace
+                      if (userInput.length() > 0) {
+                          userInput.remove(userInput.length() - 1);
+                          Serial.print("\b \b"); // Visually delete character in terminal
+                      }
+                  } else {
+                      userInput += c;
+                      Serial.print(c); // Echo back to serial monitor
+                  }
+              }
+              break;
+          }
+      }
+      break;
+    }
+
+    case STATE_SYSTEM_CHECK:
+      if (STATE_TIMEOUT(simulationEnabled ? 50 : 500)) {
+          Serial.printf("[BOOT] Scanning Tube %d/20...\n", currentTubeIndex + 1);
+          
+          // 1. Static Header
+          lcd.updateHeader("SYSTEM CHECK...", bleManager.getBleStatus());
+          
+          // 2. Setup Layout or Update Surgically
+          if (currentTubeIndex == 0) {
+              lcd.updateContent(spices[currentTubeIndex].name, "Scanning...");
+              lcd.drawProgressBar(0, 160, true); 
+          } else {
+              lcd.updateSpiceName(spices[currentTubeIndex].name);
+              lcd.updateTask("Scanning...");
+              lcd.updateDetail("");
+          }
+
+          startIdentifySpice();
+          changeState(STATE_IDENTIFYING);
+      }
+      break;
+
+    case STATE_IDENTIFYING: {
+      if (!isIdentifying()) {
+        String detectedSpice = getIdentifiedSpice();
+        String expectedSpice = spices[pendingTargetTubeIndex].name;
+        
+        Serial.printf("[SENSOR] Expected: %s | Detected: %s\n", expectedSpice.c_str(), detectedSpice.c_str());
+
+        String dUpper = detectedSpice;
+        dUpper.toUpperCase();
+        String eUpper = expectedSpice;
+        eUpper.toUpperCase();
+
+        if (dUpper == eUpper || eUpper.indexOf(dUpper) != -1 || dUpper.indexOf(eUpper) != -1) {
+           if (isInitialCheck) {
+               // Surgical updates for boot
+               lcd.updateSpiceName(detectedSpice);
+               lcd.updateTask("VERIFIED");
+               
+               int nextProgress = (int)(((float)(currentTubeIndex + 1) / TOTAL_TUBES) * 100);
+               lcd.drawProgressBar(nextProgress, 160);
+               
+               delay(100);
+
+               if (STATE_TIMEOUT(simulationEnabled ? 50 : 800)) {
+                   currentTubeIndex++;
+                   if (currentTubeIndex < TOTAL_TUBES) {
+                       pendingTargetTubeIndex = currentTubeIndex;
+                       if (!simulationEnabled) stepper.move(STEPS_PER_TUBE);
+                       changeState(STATE_ROTATING_TO_TARGET);
+                   } else {
+                       Serial.println("[BOOT] Initial Check Complete. All tubes verified.");
+                       lcd.updateSpiceName("System Ready");
+                       lcd.updateTask("All Slots OK");
+                       lcd.drawProgressBar(100, 160);
+                       delay(500);
+                       isInitialCheck = false;
+                       isRecipeMode = false;
+                       prepareReturnHome();
+                   }
+               }
+           } else {
+               lcd.updateTask("IDENTIFIED");
+               lcd.updateDetail("Match Confirmed");
+               delay(200);
+               changeState(STATE_CHECKING_FILL); 
+           }
         } else {
-            Serial.printf("[SWITCH] >>> RELEASED (LOW) at millis: %lu <<<\n", millis());
+           if (isInitialCheck) {
+                lcd.updateContent("MISMATCH!", "Found: " + detectedSpice);
+                lcd.updateStatus("Expected: " + expectedSpice, ILI9341_RED);
+           } else {
+                lcd.showOperationView("MISMATCH!", "Found: " + detectedSpice, 0, "ERROR: WRONG SPICE", "Exit");
+           }
+           bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1);
+           if (STATE_TIMEOUT(3000)) {
+               if (isInitialCheck) changeState(STATE_EMPTY_RETRY); 
+               else prepareReturnHome();
+           }
         }
-        lastSwitchState = currentSwitchState;
+      } else if (!isInitialCheck) {
+          lcd.updateTask("IDENTIFYING...");
+          lcd.updateDetail("Scanning Label");
+      }
+      break;
     }
 
-    // --- State Machine for Auto-Advance / Search ---
-    if (currentAlignState != ALIGN_IDLE) {
-        if (currentAlignState == ALIGN_EXITING) {
-            // Move motor at search speed (negative)
-            testStepper.setSpeed(SEARCH_SPEED);
-            testStepper.runSpeed();
+    case STATE_MAIN_MENU: {
+      if (remoteRequestTriggered) {
+          Serial.println("[EVENT] Remote Dispense Order Received via BLE!");
+          remoteRequestTriggered = false;
+          isRecipeMode = true;
+          currentRecipeIndex = -1; 
+          currentIngredientIndex = 0;
+          servingsCount = 1;
+          lcd.showOperationView("REMOTE ORDER", "Processing...", 0, "App Controlled", "Abort");
+          startRecipeIngredient();
+          break;
+      }
 
-            // Wait for switch to go LOW (we have left the current protrusion)
-            if (currentSwitchState == LOW) {
-                Serial.println("[ADVANCE] Cleared current slot. Searching for next slot...");
-                currentAlignState = ALIGN_ENTERING;
+      if (currentSelection != lastSelectionDrawn) {
+          const char* menuOptions[] = {"Recipes", "Manual Control"};
+          lcd.showMenu("MAIN MENU", menuOptions, 2, currentSelection, "", "Select");
+          lastSelectionDrawn = currentSelection;
+      }
+
+      if (key == 'U') {
+          currentSelection = 0;
+      } else if (key == 'D') {
+          currentSelection = 1;
+      } else if (key == 'N') {
+          if (currentSelection == 0) {
+              currentSelection = 0; 
+              changeState(STATE_RECIPE_SELECT);
+          } else {
+              currentSelection = 0; 
+              changeState(STATE_AWAITING_INPUT);
+          }
+      }
+      break;
+    }
+
+    case STATE_RECIPE_SELECT: {
+      if (currentSelection != lastSelectionDrawn) {
+          const char* recipeNames[activeRecipeCount];
+          for (int i = 0; i < activeRecipeCount; i++) recipeNames[i] = recipes[i].name.c_str();
+          lcd.showMenu("SELECT RECIPE", recipeNames, activeRecipeCount, currentSelection, "Back", "Select");
+          lastSelectionDrawn = currentSelection;
+      }
+
+      if (key == 'U') {
+          if (currentSelection > 0) currentSelection--;
+      } else if (key == 'D') {
+          if (currentSelection < activeRecipeCount - 1) currentSelection++;
+      } else if (key == 'N') {
+          currentRecipeIndex = currentSelection;
+          currentSelection = 1; 
+          changeState(STATE_RECIPE_SERVINGS_INPUT);
+      } else if (key == 'L') {
+          currentSelection = 0;
+          changeState(STATE_MAIN_MENU);
+      }
+      break;
+    }
+
+    case STATE_RECIPE_SERVINGS_INPUT: {
+      if (currentSelection != lastSelectionDrawn) {
+          lcd.showNumericSelection("SERVINGS", String(currentSelection), "Portions", "Back", "Start");
+          lastSelectionDrawn = currentSelection;
+      }
+
+      if (key == 'U') {
+          currentSelection++;
+      } else if (key == 'D') {
+          if (currentSelection > 1) currentSelection--;
+      } else if (key == 'N') {
+           servingsCount = currentSelection;
+           currentIngredientIndex = 0;    
+           isRecipeMode = true;
+           lcd.showOperationView("PREPARING", recipes[currentRecipeIndex].name, 0, "Initializing...", "Abort");
+           startRecipeIngredient(); 
+      } else if (key == 'L') {
+           currentSelection = currentRecipeIndex;
+           changeState(STATE_RECIPE_SELECT);
+      }
+      break;
+    }
+
+    case STATE_AWAITING_INPUT: {
+      if (currentSelection != lastSelectionDrawn) {
+          lcd.showNumericSelection("SELECT TUBE", String(currentSelection + 1), "Slot Number", "Back", "Select");
+          lastSelectionDrawn = currentSelection;
+      }
+
+      if (key == 'U') {
+          if (currentSelection > 0) currentSelection--;
+      } else if (key == 'D') {
+          if (currentSelection < TOTAL_TUBES - 1) currentSelection++;
+      } else if (key == 'N') {
+          pendingTargetTubeIndex = currentSelection;
+          currentSelection = 1; 
+          changeState(STATE_AWAITING_QUANTITY_INPUT);
+      } else if (key == 'L') {
+          currentSelection = 1; 
+          changeState(STATE_MAIN_MENU);
+      }
+      break;
+    }
+
+    case STATE_AWAITING_QUANTITY_INPUT: {
+      if (currentSelection != lastSelectionDrawn) {
+          lcd.showNumericSelection("QUANTITY", String(currentSelection), "Theelepels", "Back", "Start");
+          lastSelectionDrawn = currentSelection;
+      }
+
+      if (key == 'U') {
+          currentSelection++;
+      } else if (key == 'D') {
+          if (currentSelection > 1) currentSelection--;
+      } else if (key == 'N') {
+              manualQuantityInput = currentSelection;
+              targetDispenseCycles = manualQuantityInput * CYCLES_PER_THEELEPEL;
+              
+              int tubesToMove = (pendingTargetTubeIndex >= currentTubeIndex) ? 
+                                (pendingTargetTubeIndex - currentTubeIndex) : 
+                                (TOTAL_TUBES - currentTubeIndex + pendingTargetTubeIndex);
+              
+              if (tubesToMove > 0) {
+                Serial.printf("[MANUAL] Rotating %d tubes to target %d...\n", tubesToMove, pendingTargetTubeIndex + 1);
+                lcd.showOperationView("ROTATING", "Slot " + String(pendingTargetTubeIndex + 1), 0, "Motor Running", "Abort");
+                if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
+                stepper.move(tubesToMove * STEPS_PER_TUBE);
+                currentTubeIndex = pendingTargetTubeIndex; 
+                changeState(STATE_ROTATING_TO_TARGET);
+              } else {
+                 Serial.println("[MANUAL] Already at target tube.");
+                 lcd.showOperationView("ARRIVED", "Slot " + String(pendingTargetTubeIndex + 1), 100, "Stabilizing...", "Abort");
+                 changeState(STATE_IDENTIFYING); 
+              }
+      } else if (key == 'L') {
+          currentSelection = pendingTargetTubeIndex;
+          changeState(STATE_AWAITING_INPUT);
+      }
+      break;
+    }
+
+    case STATE_ROTATING_TO_TARGET: {
+      if (!isInitialCheck) {
+          lcd.updateHeader("DISPENSING...", bleManager.getBleStatus());
+          lcd.updateTask("Moving to Slot " + String(pendingTargetTubeIndex + 1));
+          lcd.updateDetail(""); 
+      }
+      if (simulationEnabled) {
+          if (STATE_TIMEOUT(50)) { 
+              startIdentifySpice();
+              changeState(STATE_IDENTIFYING);
+          }
+      } else {
+          stepper.run();
+          if (stepper.distanceToGo() == 0) {
+            if (STATE_TIMEOUT(500)) { 
+                Serial.println("[MOTOR] Rotation complete.");
+                startIdentifySpice();
+                changeState(STATE_IDENTIFYING);
             }
-        }
-        else if (currentAlignState == ALIGN_ENTERING) {
-            // Move motor at search speed (negative)
-            testStepper.setSpeed(SEARCH_SPEED);
-            testStepper.runSpeed();
+          }
+      }
+      break;
+    }
 
-            // Wait for switch to go HIGH (we have hit the next protrusion)
-            if (currentSwitchState == HIGH) {
-                // Command relative move of POST_TRIGGER_OFFSET steps
-                testStepper.move(POST_TRIGGER_OFFSET);
-                Serial.printf("[ADVANCE] Limit switch triggered! Nudging %d steps for mechanical alignment...\n", POST_TRIGGER_OFFSET);
-                currentAlignState = ALIGN_POST_TRIGGER;
+    case STATE_CHECKING_FILL: {
+      if (!isInitialCheck) {
+          lcd.updateTask("VERIFYING LEVEL");
+          lcd.updateDetail("Checking Sensor...");
+      }
+      if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) { 
+          int laserState = simulationEnabled ? HIGH : digitalRead(LASER_RX_PIN);
+          if (laserState == HIGH) { 
+            if (!isInitialCheck) {
+                lcd.updateTask("READY");
+                lcd.updateDetail("Level OK");
+                delay(200);
             }
-        }
-        else if (currentAlignState == ALIGN_POST_TRIGGER) {
-            // Run the relative adjustment move
-            testStepper.run();
-            if (testStepper.distanceToGo() == 0) {
-                Serial.println("[ADVANCE] Alignment offset complete. Stopped for color scan...");
-                currentAlignState = ALIGN_READING_COLOR;
+            startDispense(targetDispenseCycles);
+            changeState(STATE_DISPENSING);
+          } else {
+            if (!isInitialCheck) {
+                lcd.showOperationView("EMPTY!", spices[pendingTargetTubeIndex].name, 0, "Needs Refill", "Exit");
             }
-        }
-        else if (currentAlignState == ALIGN_READING_COLOR) {
-            // Take 3 measurements to average out any sensor noise
-            long sumR = 0, sumG = 0, sumB = 0;
-            for (int i = 0; i < 3; i++) {
-                sumR += colorSensor.readRawColor('r'); delay(15);
-                sumG += colorSensor.readRawColor('g'); delay(15);
-                sumB += colorSensor.readRawColor('b'); delay(15);
-            }
-            int avgR = sumR / 3;
-            int avgG = sumG / 3;
-            int avgB = sumB / 3;
+            bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
+            changeState(STATE_EMPTY_RETRY);
+          }
+      }
+      break;
+    }
 
-            // Match against registered colors with a distance threshold of 80
-            String matchedLabel = getMatchingTubeColor(avgR, avgG, avgB, 80);
+    case STATE_EMPTY_RETRY: {
+      lcd.showOperationView("ALERT", "Refill Needed", 0, "Press OK to Retry", "Back");
+      char key = getButtonKey();
+      if (key == 'N') {
+          Serial.println("[EVENT] Retrying identification/fill check...");
+          if (isInitialCheck) changeState(STATE_SYSTEM_CHECK);
+          else changeState(STATE_CHECKING_FILL);
+      } 
+      else if (key == 'L') {
+          Serial.println("[EVENT] User cancelled after empty/wrong spice.");
+          isInitialCheck = false;
+          isRecipeMode = false;
+          prepareReturnHome();
+      }
+      break;
+    }
 
-            Serial.println("----------------------------------------------------------------");
-            Serial.printf("[SENSOR] Captured Raw values -> R: %d | G: %d | B: %d\n", avgR, avgG, avgB);
-            Serial.printf("[SENSOR] Identified Color   -> >>> %s <<<\n", matchedLabel.c_str());
-            Serial.println("----------------------------------------------------------------");
+    case STATE_DISPENSING: {
+      static int lastRem = -1;
+      int currentRem = getRemainingDispenseCycles();
+      
+      if (!isInitialCheck) {
+          lcd.updateTask("DISPENSING...");
+          if (currentRem != lastRem) {
+              lastRem = currentRem;
+              lcd.updateDetail("Cycles Left: " + String(lastRem));
+              
+              int totalItems = isRecipeMode ? (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount) : 1;
+              float baseProgress = ((float)currentIngredientIndex / totalItems) * 100.0;
+              float itemContribution = (1.0 / totalItems) * 100.0;
+              float itemProgress = (1.0 - (float)currentRem / (targetDispenseCycles > 0 ? targetDispenseCycles : 1));
+              int globalProgress = (int)(baseProgress + (itemProgress * itemContribution));
+              
+              lcd.drawProgressBar(globalProgress, 160);
+          }
+      }
+      
+      if (!isDispensing()) {
+          Serial.println("[DISPENSER] Cycle complete.");
+          lastRem = -1;
+          float dispensed = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0); 
+          spices[pendingTargetTubeIndex].level -= (int)dispensed;
+          if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
+          saveGlobalSpices(); 
+          
+          if (spices[pendingTargetTubeIndex].level < 15) bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
 
-            if (searchForBlack) {
-                if (matchedLabel == "BLACK") {
-                    Serial.println("[AUTONOMOUS] >>> SUCCESS: BLACK tube identified! Scanning halted. <<<");
-                    searchForBlack = false;
-                    currentAlignState = ALIGN_IDLE;
-                } else {
-                    Serial.printf("[AUTONOMOUS] Detected %s. Moving to next slot...\n", matchedLabel.c_str());
-                    currentAlignState = ALIGN_EXITING;
-                }
+          if (isRecipeMode) {
+            currentIngredientIndex++;
+            int count = (currentRecipeIndex == -1) ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount;
+            if (currentIngredientIndex < count) {
+               startRecipeIngredient();
             } else {
-                // Done with single slot advance
-                currentAlignState = ALIGN_IDLE;
+               lcd.showOperationView("COMPLETE", "Recipe Finished", 100, "Enjoy!", "Back");
+               delay(1500);
+               prepareReturnHome();
             }
-        }
-    } else {
-        // Run standard AccelStepper movement profile (nudges)
-        testStepper.run();
+          } else {
+            lcd.showOperationView("COMPLETE", "Manual Done", 100, "Enjoy!", "Back");
+            delay(1500);
+            prepareReturnHome(); 
+          }
+      }
+      break;
     }
 
-    // --- Serial Command Parser ---
-    if (Serial.available() > 0) {
-        char cmd = Serial.read();
-
-        // Consume any remaining carriage return or line feed characters
-        while (Serial.available() > 0 && (Serial.peek() == '\n' || Serial.peek() == '\r')) {
-            Serial.read();
-        }
-
-        switch (cmd) {
-            case '1':
-                if (currentAlignState != ALIGN_IDLE) {
-                    Serial.println("[WARN] Carousel moving! Press 's' to stop first.");
-                } else {
-                    Serial.println("[SERIAL] Received '1': Moving +10 steps (Positive/Reverse)...");
-                    testStepper.move(10);
-                }
-                break;
-            case '2':
-                if (currentAlignState != ALIGN_IDLE) {
-                    Serial.println("[WARN] Carousel moving! Press 's' to stop first.");
-                } else {
-                    Serial.println("[SERIAL] Received '2': Moving -10 steps (Negative/Normal)...");
-                    testStepper.move(-10);
-                }
-                break;
-            case '3':
-                Serial.println("[SERIAL] Received '3': Advancing to next tube and reading color...");
-                searchForBlack = false;
-                if (currentSwitchState == HIGH) {
-                    currentAlignState = ALIGN_EXITING;
-                } else {
-                    currentAlignState = ALIGN_ENTERING;
-                }
-                break;
-            case '5':
-                Serial.println("[SERIAL] Received '5': Starting Autonomous Search for BLACK tube...");
-                searchForBlack = true;
-                if (currentSwitchState == HIGH) {
-                    currentAlignState = ALIGN_EXITING;
-                } else {
-                    currentAlignState = ALIGN_ENTERING;
-                }
-                break;
-            case '6': {
-                Serial.println("[SERIAL] Received '6': Measuring mapped RGB values (average of 10 samples)...");
-                long rawR = 0, rawG = 0, rawB = 0;
-                long mapR = 0, mapG = 0, mapB = 0;
-                for (int i = 0; i < 10; i++) {
-                    rawR += colorSensor.readRawColor('r');
-                    mapR += colorSensor.readMappedColor('r'); delay(15);
-                    rawG += colorSensor.readRawColor('g');
-                    mapG += colorSensor.readMappedColor('g'); delay(15);
-                    rawB += colorSensor.readRawColor('b');
-                    mapB += colorSensor.readMappedColor('b'); delay(15);
-                }
-
-                Serial.println("----------------------------------------------------------------");
-                Serial.printf("[SENSOR] Avg RAW    -> R: %ld | G: %ld | B: %ld\n", rawR / 10, rawG / 10, rawB / 10);
-                Serial.printf("[SENSOR] Avg MAPPED -> R: %ld | G: %ld | B: %ld\n", mapR / 10, mapG / 10, mapB / 10);
-
-                Serial.println("----------------------------------------------------------------");
-                break;
+    case STATE_RETURNING_HOME: {
+      lcd.showOperationView("HOMING", "Moving to Slot 1", 50, "Clearing Area", "");
+      if (simulationEnabled) {
+          if (STATE_TIMEOUT(100)) {
+              if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
+              isRecipeMode = false;
+              changeState(STATE_MAIN_MENU);
+          }
+      } else {
+          stepper.run();
+          if (stepper.distanceToGo() == 0) {
+            if (STATE_TIMEOUT(500)) {
+                Serial.println("[MOTOR] Returned home.");
+                if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
+                isRecipeMode = false;
+                changeState(STATE_MAIN_MENU);
             }
-            case 's':
-                Serial.println("[SERIAL] Received 's': Emergency STOP triggered!");
-                testStepper.moveTo(testStepper.currentPosition());
-                currentAlignState = ALIGN_IDLE;
-                searchForBlack = false;
-                break;
-            default:
-                break;
+          }
+      }
+      break;
+    }
+    
+    default: break;
+  }
+}
+
+/*
+  TODO / OPTIMIZATION NOTE (Single-Loop Recipe Dispensing Optimization):
+  Currently, recipe dispensing goes over ingredients in strict sequential order (e.g., BLACK then BLUE).
+  If the carousel encounters BLUE first, it continues rotating past it to find BLACK first, then rotates 
+  again to find BLUE.
+  
+  To optimize this and make it more efficient:
+  We should modify the dispensing workflow to check if the *current physical tube* matched by the sensor 
+  is present *anywhere* in the pending recipe ingredients list. If it matches a recipe ingredient that 
+  has not been dispensed yet, we should dispense it immediately regardless of its position in the recipe.
+  This "opportunistic/out-of-order" dispensing ensures we loop at most once over all 20 tubes.
+*/
+void startRecipeIngredient() {
+   RecipeItem item;
+   if (currentRecipeIndex == -1) {
+       item = remoteRecipe.ingredients[currentIngredientIndex];
+   } else {
+       item = recipes[currentRecipeIndex].ingredients[currentIngredientIndex];
+   }
+   
+   pendingTargetTubeIndex = item.spiceIndex;
+   currentRecipeGrams = item.quantityGrams * servingsCount; 
+   targetDispenseCycles = (int)(currentRecipeGrams / GRAMS_PER_CYCLE);
+   
+   Serial.printf("[RECIPE] Target Tube: %d | Grams: %.1fg | Cycles: %d\n", 
+       pendingTargetTubeIndex + 1, currentRecipeGrams, targetDispenseCycles);
+
+   if (!isInitialCheck) {
+       // Enhanced Stability: Use surgical updates to keep progress bar drawn
+       lcd.updateHeader("DISPENSING...", bleManager.getBleStatus());
+       lcd.setActionBar("Abort"); // Ensure button is visible
+       if (currentIngredientIndex == 0) {
+           // First ingredient: Full setup
+           lcd.updateContent(spices[pendingTargetTubeIndex].name, "PREPARING");
+           lcd.drawProgressBar(0, 160, true);
+       } else {
+           // Subsequent ingredients: Surgical updates to preserve Progress Bar
+           lcd.updateSpiceName(spices[pendingTargetTubeIndex].name);
+           lcd.updateTask("PREPARING");
+           lcd.updateDetail("");
+       }
+   }
+
+   int tubesToMove = (pendingTargetTubeIndex >= currentTubeIndex) ? 
+                     (pendingTargetTubeIndex - currentTubeIndex) : 
+                     (TOTAL_TUBES - currentTubeIndex + pendingTargetTubeIndex);
+   
+   if (tubesToMove > 0) {
+     if (!simulationEnabled) {
+         if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
+         stepper.move(tubesToMove * STEPS_PER_TUBE);
+     }
+     currentTubeIndex = pendingTargetTubeIndex; 
+     changeState(STATE_ROTATING_TO_TARGET);
+   } else {
+      startIdentifySpice();
+      changeState(STATE_IDENTIFYING); 
+   }
+}
+
+void prepareReturnHome() {
+    if (currentTubeIndex != 0) { 
+        Serial.printf("[MOTOR] Returning home from Tube %d...\n", currentTubeIndex + 1);
+        lcd.showOperationView("FINISHING", "Returning Home", 0, "Homing to Slot 1", "");
+        int tubesToMoveHome = TOTAL_TUBES - currentTubeIndex; 
+        if (!simulationEnabled) {
+            if (STEP_ENABLE_PIN != -1) stepper.enableOutputs();
+            stepper.move(tubesToMoveHome * STEPS_PER_TUBE);
         }
+        currentTubeIndex = 0;
+        changeState(STATE_RETURNING_HOME);
+    } else { 
+        isRecipeMode = false;
+        changeState(STATE_MAIN_MENU);
+        if (STEP_ENABLE_PIN != -1) stepper.disableOutputs();
     }
 }
+
+

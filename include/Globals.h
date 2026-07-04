@@ -13,6 +13,7 @@
 // --- State Machine Enum ---
 enum SystemState {
   STATE_BOOT,
+  STATE_INITIAL_SETUP,
   STATE_SYSTEM_CHECK,
   STATE_MAIN_MENU,
   STATE_RECIPE_SELECT,

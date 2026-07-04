@@ -94,9 +94,9 @@ void loadGlobalSpices() {
         if (i >= NUM_SPICES) break;
         spices[i].name = obj["name"] | defaultSpices[i].name;
         spices[i].level = obj["level"] | defaultSpices[i].level;
-        spices[i].r_val = defaultSpices[i].r_val; 
-        spices[i].g_val = defaultSpices[i].g_val;
-        spices[i].b_val = defaultSpices[i].b_val;
+        spices[i].r_val = obj["r_val"] | defaultSpices[i].r_val; 
+        spices[i].g_val = obj["g_val"] | defaultSpices[i].g_val;
+        spices[i].b_val = obj["b_val"] | defaultSpices[i].b_val;
         i++;
     }
     Serial.println("Global Spices loaded successfully.");
@@ -115,6 +115,9 @@ void saveGlobalSpices() {
         JsonObject obj = spicesArr.add<JsonObject>();
         obj["name"] = spices[i].name;
         obj["level"] = spices[i].level;
+        obj["r_val"] = spices[i].r_val;
+        obj["g_val"] = spices[i].g_val;
+        obj["b_val"] = spices[i].b_val;
     }
 
     if (serializeJson(doc, file) == 0) {
@@ -216,4 +219,15 @@ void deleteProfile(String uuid) {
         LittleFS.remove(path);
         Serial.printf("Profile %s deleted.\n", uuid.c_str());
     }
+}
+
+void factoryResetDatabase() {
+    Serial.println("[DB] Executing Factory Reset...");
+    if (LittleFS.exists("/global_spices.json")) {
+        LittleFS.remove("/global_spices.json");
+    }
+    isMachineConfigured = false;
+    Serial.println("[DB] Factory Reset complete. Rebooting...");
+    delay(500);
+    ESP.restart();
 }

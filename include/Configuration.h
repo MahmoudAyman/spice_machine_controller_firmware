@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // --- System Configuration ---
-#define SIMULATION_MODE 1  // Set to 0 for actual hardware
+#define SIMULATION_MODE 0  // Set to 0 for actual hardware
 
 // --- Pin Definitions (Custom PCB V1.0) ---
 
