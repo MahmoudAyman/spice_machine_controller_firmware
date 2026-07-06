@@ -47,6 +47,7 @@
 
 // Other Peripherals
 #define LASER_RX_PIN  35 
+#define LASER_FILLED_STATE LOW
 #define SERVO_PIN     15
 #define VIBRATOR_PIN  -1  // Currently unused/disabled
 

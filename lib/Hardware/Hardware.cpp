@@ -27,11 +27,7 @@ void initHardware() {
   Serial.println("Initializing Sensors...");
   colorDetector.begin();
   pinMode(LIMIT_SWITCH_PIN, INPUT);
-  if (simulationEnabled) {
-      Serial.println("[SIM] Bypassing Laser Fill Sensor pin configuration...");
-  } else {
-      pinMode(LASER_RX_PIN, INPUT);
-  }
+  laserSensor.begin();
 
   // Buttons (Discrete Pins)
   Serial.println("Initializing Buttons...");

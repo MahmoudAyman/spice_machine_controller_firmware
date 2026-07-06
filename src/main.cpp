@@ -13,6 +13,7 @@ LCDManager lcd;
 Servo dispenserServo;
 ColorDetector colorDetector = ColorDetector(CS_S0, CS_S1, CS_S2, CS_S3, CS_OUT);
 BLEManager bleManager;
+LaserLevelSensor laserSensor(LASER_RX_PIN);
 
 // --- Logic Variables ---
 bool simulationEnabled = (SIMULATION_MODE == 1);
@@ -732,8 +733,7 @@ void loop() {
           lcd.updateDetail("Checking Sensor...");
       }
       if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) { 
-          int laserState = simulationEnabled ? HIGH : digitalRead(LASER_RX_PIN);
-          if (laserState == HIGH) { 
+          if (laserSensor.isFilled()) { 
             if (!isInitialCheck) {
                 lcd.updateTask("READY");
                 lcd.updateDetail("Level OK");
