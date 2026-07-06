@@ -12,7 +12,7 @@ struct Spice {
 };
 
 struct RecipeItem {
-  int spiceIndex; 
+  String spiceName; 
   float quantityGrams; 
 };
 
@@ -26,9 +26,7 @@ struct Recipe {
 // --- DATA DECLARATIONS ---
 extern const int NUM_SPICES;
 extern Spice spices[];
-extern const Spice defaultSpices[];
 extern Recipe recipes[MAX_RECIPES];
-extern const Recipe defaultRecipes[];
 extern int activeRecipeCount;
 extern String activeProfileUUID;
 extern bool isMachineConfigured;

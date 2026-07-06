@@ -12,29 +12,25 @@ static int servoPos = 0;
 // --- Hardware Initialization ---
 void initHardware() {
   // Stepper
-  if (simulationEnabled) {
-      Serial.println("[SIM] Initializing Stepper...");
-  } else {
-      Serial.println("Initializing Stepper...");
-      if (STEP_ENABLE_PIN != -1) {
-          pinMode(STEP_ENABLE_PIN, OUTPUT); 
-          digitalWrite(STEP_ENABLE_PIN, HIGH); 
-      }
-      
-      stepper.setMaxSpeed(400); 
-      stepper.setAcceleration(200);   
-      // Note: STEP_ENABLE_PIN is hardwired to GND and set to -1
-      stepper.setPinsInverted(true, false, false); 
+  Serial.println("Initializing Stepper...");
+  if (STEP_ENABLE_PIN != -1) {
+      pinMode(STEP_ENABLE_PIN, OUTPUT); 
+      digitalWrite(STEP_ENABLE_PIN, HIGH); 
   }
+  
+  stepper.setMaxSpeed(400); 
+  stepper.setAcceleration(200);   
+  // Note: STEP_ENABLE_PIN is hardwired to GND and set to -1
+  stepper.setPinsInverted(true, false, false); 
 
   // Sensors
+  Serial.println("Initializing Sensors...");
+  colorDetector.begin();
+  pinMode(LIMIT_SWITCH_PIN, INPUT);
   if (simulationEnabled) {
-      Serial.println("[SIM] Initializing Sensors...");
+      Serial.println("[SIM] Bypassing Laser Fill Sensor pin configuration...");
   } else {
-      Serial.println("Initializing Sensors...");
-      colorDetector.begin();
       pinMode(LASER_RX_PIN, INPUT);
-      pinMode(LIMIT_SWITCH_PIN, INPUT);
   }
 
   // Buttons (Discrete Pins)
@@ -73,10 +69,6 @@ char getButtonKey() {
 }
 
 bool isLimitSwitchPressed() {
-    if (simulationEnabled) {
-        // In simulation mode, assume switch is pressed when stepper is done moving
-        return stepper.distanceToGo() == 0;
-    }
     return digitalRead(LIMIT_SWITCH_PIN) == HIGH;
 }
 

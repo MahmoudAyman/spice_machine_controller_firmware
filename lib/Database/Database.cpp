@@ -3,52 +3,13 @@
 #include <ArduinoJson.h>
 
 const int NUM_SPICES = 20;
-int activeRecipeCount = 12;
+int activeRecipeCount = 0;
 String activeProfileUUID = "";
 bool isMachineConfigured = false;
 
 // The working arrays in RAM
 Spice spices[NUM_SPICES];
 Recipe recipes[MAX_RECIPES];
-
-// The factory default data
-const Spice defaultSpices[NUM_SPICES] = {
-  {"Paprika",      180, 420, 380, 100}, // 0
-  {"Onion Powder", 130, 140, 135, 100}, // 1
-  {"Basil",        350, 180, 320, 100}, // 2
-  {"Turmeric",     140, 180, 300, 100}, // 3
-  {"Oregano",      380, 220, 350, 100}, // 4
-  {"Coriander",    250, 280, 300, 100}, // 5
-  {"Thyme",        360, 250, 340, 100}, // 6
-  {"Ginger",       160, 190, 280, 100}, // 7
-  {"Parsley",      340, 170, 330, 100}, // 8
-  {"Cardamom",     280, 200, 290, 100}, // 9
-  {"Rosemary",     400, 250, 380, 100}, // 10
-  {"Clove",        450, 480, 460, 100}, // 11
-  {"Garlic",       120, 125, 115, 100}, // 12
-  {"Nutmeg",       320, 360, 400, 100}, // 13
-  {"Black Pepper", 520, 600, 540, 100}, // 14
-  {"Bay Leaves",   330, 230, 310, 100}, // 15
-  {"Chili Flakes", 190, 400, 370, 100}, // 16
-  {"Star Anise",   420, 490, 470, 100}, // 17
-  {"Cumin",        290, 330, 380, 100}, // 18
-  {"Cinnamon",     260, 380, 420, 100}  // 19
-};
-
-const Recipe defaultRecipes[12] = {
-  { "def_1", "Italian Herbs", 8, { {2, 1.6}, {4, 1.6}, {6, 1.2}, {8, 1.2}, {10, 1.0}, {12, 0.8}, {14, 0.6}, {16, 0.2} }},        
-  { "def_2", "Taco Seas.", 8, { {0, 2.0}, {18, 2.2}, {1, 1.4}, {12, 1.2}, {14, 0.8}, {16, 0.8}, {6, 0.6}, {4, 0.6} }},
-  { "def_3", "Curry Madras", 9, { {3, 2.0}, {5, 1.6}, {18, 1.2}, {0, 0.8}, {7, 0.8}, {12, 0.6}, {14, 0.6}, {16, 0.4}, {9, 0.4} }},
-  { "def_4", "BBQ", 9, { {0, 2.4}, {12, 1.2}, {1, 1.2}, {14, 0.8}, {18, 0.6}, {16, 0.6}, {6, 0.6}, {4, 0.2}, {19, 0.4} }},
-  { "def_5", "Garam Masala", 9, { {9, 2.0}, {18, 1.6}, {5, 1.2}, {19, 0.8}, {14, 0.6}, {11, 0.6}, {13, 0.6}, {15, 0.4}, {17, 0.4} }},
-  { "def_6", "Ras el Hanout", 10, { {18, 1.6}, {5, 1.6}, {19, 0.8}, {0, 0.8}, {7, 0.8}, {9, 0.6}, {11, 0.4}, {13, 0.6}, {3, 0.6}, {14, 0.6} }},
-  { "def_7", "Gyros", 8, { {4, 1.6}, {6, 1.2}, {12, 1.2}, {1, 1.2}, {0, 1.2}, {18, 0.6}, {14, 0.6}, {8, 0.4} }},
-  { "def_8", "Shawarma", 9, { {18, 1.6}, {5, 1.2}, {0, 1.2}, {12, 1.2}, {1, 0.8}, {14, 0.6}, {3, 0.6}, {19, 0.4}, {9, 0.4} }},
-  { "def_9", "ChiliConCarne", 7, { {0, 2.4}, {16, 1.6}, {18, 1.6}, {12, 0.8}, {1, 0.8}, {4, 0.4}, {14, 0.4} }},
-  { "def_10", "Moroc. Tagine", 8, { {18, 1.6}, {5, 1.6}, {0, 1.2}, {3, 1.2}, {19, 0.8}, {7, 0.8}, {14, 0.4}, {9, 0.4} }},
-  { "def_11", "Ind. Tandoori", 8, { {0, 2.0}, {18, 1.4}, {5, 1.2}, {12, 1.2}, {7, 0.8}, {3, 0.6}, {16, 0.6}, {9, 0.2} }},
-  { "def_12", "H. de Provence", 8, { {6, 1.6}, {10, 1.6}, {4, 1.2}, {2, 1.2}, {8, 0.8}, {15, 0.6}, {14, 0.4}, {12, 0.6} }}
-};
 
 bool initStorage() {
     if (!LittleFS.begin(true)) {
@@ -69,9 +30,15 @@ void formatStorage() {
 
 void loadGlobalSpices() {
     if (!LittleFS.exists("/global_spices.json")) {
-        Serial.println("No global spice config found. Using factory defaults. Machine unconfigured.");
+        Serial.println("No global spice config found. Machine unconfigured.");
         isMachineConfigured = false;
-        for (int i = 0; i < NUM_SPICES; i++) spices[i] = defaultSpices[i];
+        for (int i = 0; i < NUM_SPICES; i++) {
+            spices[i].name = "";
+            spices[i].level = 0;
+            spices[i].r_val = 0;
+            spices[i].g_val = 0;
+            spices[i].b_val = 0;
+        }
         return;
     }
 
@@ -92,11 +59,11 @@ void loadGlobalSpices() {
     int i = 0;
     for (JsonObject obj : spicesArr) {
         if (i >= NUM_SPICES) break;
-        spices[i].name = obj["name"] | defaultSpices[i].name;
-        spices[i].level = obj["level"] | defaultSpices[i].level;
-        spices[i].r_val = obj["r_val"] | defaultSpices[i].r_val; 
-        spices[i].g_val = obj["g_val"] | defaultSpices[i].g_val;
-        spices[i].b_val = obj["b_val"] | defaultSpices[i].b_val;
+        spices[i].name = obj["name"] | "";
+        spices[i].level = obj["level"] | 0;
+        spices[i].r_val = obj["r_val"] | 0; 
+        spices[i].g_val = obj["g_val"] | 0;
+        spices[i].b_val = obj["b_val"] | 0;
         i++;
     }
     Serial.println("Global Spices loaded successfully.");
@@ -166,7 +133,7 @@ bool loadProfile(String uuid) {
         for (JsonObject iObj : ingredientsArr) {
             if (recipes[activeRecipeCount].ingredientCount >= 10) break;
             int idx = recipes[activeRecipeCount].ingredientCount;
-            recipes[activeRecipeCount].ingredients[idx].spiceIndex = iObj["slot"].as<int>() - 1;
+            recipes[activeRecipeCount].ingredients[idx].spiceName = iObj["name"] | "";
             recipes[activeRecipeCount].ingredients[idx].quantityGrams = iObj["grams"].as<float>();
             recipes[activeRecipeCount].ingredientCount++;
         }
@@ -201,7 +168,7 @@ void saveProfile() {
         JsonArray ingredientsArr = rObj["ingredients"].to<JsonArray>();
         for (int j = 0; j < recipes[i].ingredientCount; j++) {
             JsonObject iObj = ingredientsArr.add<JsonObject>();
-            iObj["slot"] = recipes[i].ingredients[j].spiceIndex + 1;
+            iObj["name"] = recipes[i].ingredients[j].spiceName;
             iObj["grams"] = recipes[i].ingredients[j].quantityGrams;
         }
     }

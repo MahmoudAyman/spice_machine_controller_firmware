@@ -217,7 +217,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 remoteRecipe.name = "Remote Custom";
                 remoteRecipe.ingredientCount = items.size();
                 for (int i = 0; i < remoteRecipe.ingredientCount && i < 10; i++) {
-                    remoteRecipe.ingredients[i].spiceIndex = items[i]["slot"].as<int>() - 1;
+                    remoteRecipe.ingredients[i].spiceName = items[i]["name"] | "";
                     remoteRecipe.ingredients[i].quantityGrams = items[i]["grams"].as<float>();
                 }
             } else {
@@ -252,7 +252,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                     for (JsonObject iObj : ingredientsArr) {
                         if (recipes[activeRecipeCount].ingredientCount >= 10) break;
                         int idx = recipes[activeRecipeCount].ingredientCount;
-                        recipes[activeRecipeCount].ingredients[idx].spiceIndex = iObj["slot"].as<int>() - 1;
+                        recipes[activeRecipeCount].ingredients[idx].spiceName = iObj["name"] | "";
                         recipes[activeRecipeCount].ingredients[idx].quantityGrams = iObj["grams"].as<float>();
                         recipes[activeRecipeCount].ingredientCount++;
                     }
@@ -325,7 +325,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             for(int i = 0; i < activeRecipeCount; i++) {
                 Serial.printf("[%d] ID: %s | Name: %s | Items: %d\n", i+1, recipes[i].id.c_str(), recipes[i].name.c_str(), recipes[i].ingredientCount);
                 for(int j = 0; j < recipes[i].ingredientCount; j++) {
-                    Serial.printf("  - Slot %d: %.1fg\n", recipes[i].ingredients[j].spiceIndex + 1, recipes[i].ingredients[j].quantityGrams);
+                    Serial.printf("  - Spice %s: %.1fg\n", recipes[i].ingredients[j].spiceName.c_str(), recipes[i].ingredients[j].quantityGrams);
                 }
             }
             Serial.println("-----------------------------");

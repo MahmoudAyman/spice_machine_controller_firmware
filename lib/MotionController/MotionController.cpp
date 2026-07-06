@@ -1,0 +1,237 @@
+#include "MotionController.h"
+#include "Globals.h"
+#include "Configuration.h"
+#include "Database.h"
+#include "Hardware.h"
+
+// --- Global Stepper Instance ---
+// Placed here so it is encapsulated, but still available to other modules via Globals.h
+AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, STEP_DIR_PIN);
+
+// --- Private Motion Controller State ---
+static RotationState currentRotState = ROT_IDLE;
+static BootAlignState currentBootState = BOOT_ALIGN_IDLE;
+
+static int mcCurrentSlotIndex = 0;
+static int mcTargetSlotIndex = 0;
+static int mcSlotsRemainingToMove = 0;
+static unsigned long mcDebounceTimer = 0;
+
+static const float SEARCH_SPEED = -250.0;
+static const float SLOW_ALIGN_SPEED = -50.0;
+
+void initMotionController() {
+    Serial.println("[MC] Initializing Motion Controller...");
+    stepper.setMaxSpeed(400);
+    stepper.setAcceleration(200);
+    stepper.setPinsInverted(true, false, false);
+    currentRotState = ROT_IDLE;
+    currentBootState = BOOT_ALIGN_IDLE;
+    mcCurrentSlotIndex = 0;
+    mcSlotsRemainingToMove = 0;
+}
+
+void startRotationToSlot(int targetSlotIndex) {
+    if (targetSlotIndex < 0 || targetSlotIndex >= NUM_SPICES) {
+        Serial.printf("[MC] [ERROR] Invalid target slot index %d!\n", targetSlotIndex);
+        return;
+    }
+    
+    mcTargetSlotIndex = targetSlotIndex;
+    int slotsToMove = (targetSlotIndex >= mcCurrentSlotIndex) ? 
+                      (targetSlotIndex - mcCurrentSlotIndex) : 
+                      (TOTAL_TUBES - mcCurrentSlotIndex + targetSlotIndex);
+                      
+    if (slotsToMove == 0) {
+        Serial.printf("[MC] Already at target Slot %d. No rotation needed.\n", targetSlotIndex + 1);
+        mcSlotsRemainingToMove = 0;
+        currentRotState = ROT_IDLE;
+        return;
+    }
+    
+    Serial.printf("[MC] Requesting rotation of %d slots from Slot %d to Slot %d...\n", 
+                  slotsToMove, mcCurrentSlotIndex + 1, targetSlotIndex + 1);
+                  
+    mcSlotsRemainingToMove = slotsToMove;
+    enableStepperMotor();
+    
+    currentRotState = isLimitSwitchPressed() ? ROT_EXITING : ROT_ENTERING;
+    mcDebounceTimer = millis();
+}
+
+bool tickRotation() {
+    switch (currentRotState) {
+        case ROT_IDLE:
+            return true;
+            
+        case ROT_EXITING: {
+            stepper.setSpeed(SEARCH_SPEED);
+            stepper.runSpeed();
+            if (!isLimitSwitchPressed()) {
+                Serial.println("[MC] Cleared slot protrusion. Searching for next edge...");
+                mcDebounceTimer = millis();
+                currentRotState = ROT_ENTERING;
+            }
+            break;
+        }
+        
+        case ROT_ENTERING: {
+            stepper.setSpeed(SEARCH_SPEED);
+            stepper.runSpeed();
+            
+            if (!isLimitSwitchPressed()) {
+                mcDebounceTimer = millis();
+            }
+            
+            if (millis() - mcDebounceTimer >= 10) { // Pressed for 10ms
+                mcSlotsRemainingToMove--;
+                mcCurrentSlotIndex = (mcCurrentSlotIndex + 1) % TOTAL_TUBES;
+                Serial.printf("[MC] Passed Slot %d. Slots remaining: %d\n", mcCurrentSlotIndex + 1, mcSlotsRemainingToMove);
+                
+                if (mcSlotsRemainingToMove > 0) {
+                    currentRotState = ROT_EXITING;
+                } else {
+                    Serial.println("[MC] Arrived at target slot. Centering slowly...");
+                    mcDebounceTimer = millis();
+                    currentRotState = ROT_ALIGNING;
+                }
+            }
+            break;
+        }
+        
+        case ROT_ALIGNING: {
+            stepper.setSpeed(SLOW_ALIGN_SPEED);
+            stepper.runSpeed();
+            
+            if (isLimitSwitchPressed()) {
+                mcDebounceTimer = millis();
+            }
+            
+            if (millis() - mcDebounceTimer >= 20) { // Released for 20ms
+                stepper.stop();
+                Serial.println("[MC] Target centering alignment complete.");
+                currentRotState = ROT_IDLE;
+                return true; // Finished!
+            }
+            break;
+        }
+    }
+    return false;
+}
+
+void startBootRecoveryAlignment() {
+    Serial.println("[MC] Starting Boot recovery alignment...");
+    currentBootState = BOOT_ALIGN_INIT;
+}
+
+bool tickBootRecovery(int &matchedSlotIndex) {
+    switch (currentBootState) {
+        case BOOT_ALIGN_IDLE:
+            return true;
+            
+        case BOOT_ALIGN_INIT: {
+            enableStepperMotor();
+            if (isLimitSwitchPressed()) {
+                currentBootState = BOOT_ALIGN_EXITING;
+            } else {
+                mcDebounceTimer = millis();
+                currentBootState = BOOT_ALIGN_ENTERING;
+            }
+            break;
+        }
+        
+        case BOOT_ALIGN_EXITING: {
+            stepper.setSpeed(SEARCH_SPEED);
+            stepper.runSpeed();
+            if (!isLimitSwitchPressed()) {
+                mcDebounceTimer = millis();
+                currentBootState = BOOT_ALIGN_ENTERING;
+            }
+            break;
+        }
+        
+        case BOOT_ALIGN_ENTERING: {
+            stepper.setSpeed(SEARCH_SPEED);
+            stepper.runSpeed();
+            if (!isLimitSwitchPressed()) {
+                mcDebounceTimer = millis();
+            }
+            if (millis() - mcDebounceTimer >= 10) { // Pressed for 10ms
+                mcDebounceTimer = millis();
+                currentBootState = BOOT_ALIGN_ALIGNING;
+            }
+            break;
+        }
+        
+        case BOOT_ALIGN_ALIGNING: {
+            stepper.setSpeed(SLOW_ALIGN_SPEED);
+            stepper.runSpeed();
+            if (isLimitSwitchPressed()) {
+                mcDebounceTimer = millis();
+            }
+            if (millis() - mcDebounceTimer >= 20) { // Released for 20ms
+                stepper.stop();
+                currentBootState = BOOT_ALIGN_READ_AND_MATCH;
+            }
+            break;
+        }
+        
+        case BOOT_ALIGN_READ_AND_MATCH: {
+            Serial.println("[MC] Centered. Reading color sensor to discover slot index...");
+            
+            long rawR = 0, rawG = 0, rawB = 0;
+            for (int i = 0; i < 3; i++) {
+                rawR += colorDetector.readRawColor('r'); delay(15);
+                rawG += colorDetector.readRawColor('g'); delay(15);
+                rawB += colorDetector.readRawColor('b'); delay(15);
+            }
+            rawR /= 3;
+            rawG /= 3;
+            rawB /= 3;
+            
+            int bestMatch = 0;
+            long smallestDiff = -1;
+            for (int s = 0; s < TOTAL_TUBES; s++) {
+                long diff = abs(spices[s].r_val - rawR) + 
+                            abs(spices[s].g_val - rawG) + 
+                            abs(spices[s].b_val - rawB);
+                if (smallestDiff == -1 || diff < smallestDiff) {
+                    smallestDiff = diff;
+                    bestMatch = s;
+                }
+            }
+            
+            mcCurrentSlotIndex = bestMatch;
+            matchedSlotIndex = bestMatch;
+            
+            Serial.printf("[MC] Boot recovery matched to Slot %d (%s) with diff %ld.\n", 
+                          bestMatch + 1, spices[bestMatch].name.c_str(), smallestDiff);
+            
+            disableStepperMotor();
+            currentBootState = BOOT_ALIGN_IDLE;
+            return true; // Complete!
+        }
+    }
+    return false;
+}
+
+void startHoming() {
+    startRotationToSlot(0);
+}
+
+RotationState getRotationState() { return currentRotState; }
+int getSlotsRemainingToMove() { return mcSlotsRemainingToMove; }
+int getCurrentSlotIndex() { return mcCurrentSlotIndex; }
+void setCurrentSlotIndex(int slotIndex) { mcCurrentSlotIndex = slotIndex; }
+
+void disableStepperMotor() {
+    if (STEP_ENABLE_PIN != -1) {
+        stepper.disableOutputs();
+    }
+}
+
+void enableStepperMotor() {
+    if (STEP_ENABLE_PIN != -1) {
+        stepper.enableOutputs();
+    }
+}
