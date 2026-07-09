@@ -62,6 +62,25 @@ void prepareReturnHome();
 void startRecipeIngredient();
 int findSlotByName(String targetName);
 void startRecipeSearch();
+void applyDispensedSpiceLevel(int completedCycles);
+
+void applyDispensedSpiceLevel(int completedCycles) {
+    if (pendingTargetTubeIndex >= 0 && pendingTargetTubeIndex < TOTAL_TUBES) {
+        float actualDispensedGrams = completedCycles * GRAMS_PER_CYCLE;
+        float percentageReduction = (actualDispensedGrams / MAX_SPICE_GRAMS) * 100.0f;
+        
+        Serial.printf("[DISPENSER] Level reduction: %d cycles -> %.2fg -> %.1f%% reduction on Slot %d '%s'\n",
+                      completedCycles, actualDispensedGrams, percentageReduction, pendingTargetTubeIndex + 1, spices[pendingTargetTubeIndex].name.c_str());
+                      
+        spices[pendingTargetTubeIndex].level -= (int)round(percentageReduction);
+        if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
+        saveGlobalSpices();
+        
+        if (spices[pendingTargetTubeIndex].level < 15) {
+            bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1, false);
+        }
+    }
+}
 
 void changeState(SystemState newState) {
     Serial.printf("[STATE] %d -> %d\n", currentState, newState);
@@ -85,19 +104,80 @@ void sendBleStatus() {
     doc["type"] = "status";
     
     String stateStr = "idle";
+    String statusMsg = "Ready";
+    String detailMsg = "Awaiting command";
+    
     switch (currentState) {
-        case STATE_MAIN_MENU: stateStr = "idle"; break;
+        case STATE_MAIN_MENU: 
+            stateStr = "idle"; 
+            statusMsg = "Ready";
+            detailMsg = "Awaiting command";
+            break;
         case STATE_BOOT: 
+            stateStr = "booting"; 
+            statusMsg = "Booting";
+            detailMsg = "Initializing system...";
+            break;
         case STATE_SYSTEM_CHECK: 
+            stateStr = "booting"; 
+            statusMsg = "System Check";
+            detailMsg = "Scanning Tube " + String(currentTubeIndex + 1) + "/20...";
+            break;
         case STATE_ROTATING_TO_TARGET:
+            stateStr = isInitialCheck ? "booting" : "busy"; 
+            statusMsg = isRecipeMode ? "Searching Spices" : "Rotating";
+            detailMsg = isRecipeMode ? "Aligning to next ingredient..." : "Aligning to Slot " + String(pendingTargetTubeIndex + 1) + "...";
+            break;
         case STATE_IDENTIFYING:
+            stateStr = isInitialCheck ? "booting" : "busy"; 
+            statusMsg = "Identifying";
+            detailMsg = "Reading TCS3200 sensor...";
+            break;
         case STATE_CHECKING_FILL:
             stateStr = isInitialCheck ? "booting" : "busy"; 
+            statusMsg = "Checking Level";
+            detailMsg = "Reading laser fill sensor...";
             break;
-        case STATE_ERROR_RETURN: stateStr = "error"; break;
-        default: stateStr = "busy"; break;
+        case STATE_DISPENSING:
+            stateStr = "busy";
+            statusMsg = "Dispensing";
+            if (isRecipeMode) {
+                int totalItems = (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount);
+                if (currentIngredientIndex >= 0 && currentIngredientIndex < totalItems) {
+                    RecipeItem rItem = (currentRecipeIndex == -1 ? remoteRecipe.ingredients[currentIngredientIndex] : recipes[currentRecipeIndex].ingredients[currentIngredientIndex]);
+                    detailMsg = "Dispensing " + rItem.spiceName + " (" + String(rItem.quantityGrams, 1) + "g)...";
+                } else {
+                    detailMsg = "Sweeping dispenser servo...";
+                }
+            } else {
+                detailMsg = "Dispensing " + spices[pendingTargetTubeIndex].name + " (" + String(manualQuantityInput * 2.0, 1) + "g)...";
+            }
+            break;
+        case STATE_EMPTY_RETRY:
+            stateStr = "error";
+            statusMsg = "Alert";
+            detailMsg = "Refill needed or incorrect spice.";
+            break;
+        case STATE_RETURNING_HOME:
+            stateStr = "busy";
+            statusMsg = "Homing";
+            detailMsg = "Returning carousel to Slot 1...";
+            break;
+        case STATE_ERROR_RETURN: 
+            stateStr = "error"; 
+            statusMsg = "System Error";
+            detailMsg = "Execution failed. Check hardware.";
+            break;
+        default: 
+            stateStr = "busy"; 
+            statusMsg = "Busy";
+            detailMsg = "Processing...";
+            break;
     }
+    
     doc["state"] = stateStr;
+    doc["status_msg"] = statusMsg;
+    doc["detail"] = detailMsg;
     
     if (isRecipeMode) {
         if (isInitialCheck) {
@@ -110,16 +190,45 @@ void sendBleStatus() {
                 doc["active_recipe"] = recipes[currentRecipeIndex].name;
             }
             
-            int total = (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount);
-            if (total > 0) {
-                doc["progress"] = (int)(((float)currentIngredientIndex / total) * 100);
+            // Calculate high-precision progressive recipe progress
+            int totalItems = (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount);
+            if (totalItems > 0) {
+                float baseProgress = ((float)currentIngredientIndex / totalItems) * 100.0;
+                float itemContribution = (1.0 / totalItems) * 100.0;
+                
+                float itemProgress = 0.0;
+                if (currentState == STATE_DISPENSING) {
+                    int currentRem = getRemainingDispenseCycles();
+                    int totalCycles = (targetDispenseCycles > 0 ? targetDispenseCycles : 1);
+                    itemProgress = (1.0 - (float)currentRem / totalCycles);
+                    if (itemProgress < 0.0) itemProgress = 0.0;
+                    if (itemProgress > 1.0) itemProgress = 1.0;
+                }
+                
+                int globalProgress = (int)(baseProgress + (itemProgress * itemContribution));
+                if (globalProgress < 0) globalProgress = 0;
+                if (globalProgress > 100) globalProgress = 100;
+                
+                doc["progress"] = globalProgress;
             } else {
                 doc["progress"] = 0;
             }
         }
     } else if (currentState == STATE_DISPENSING || currentState == STATE_ROTATING_TO_TARGET) {
         doc["active_recipe"] = "Manual";
-        doc["progress"] = isDispensing() ? 50 : 0;
+        
+        // Calculate high-precision manual dispense progress
+        if (currentState == STATE_DISPENSING) {
+            int currentRem = getRemainingDispenseCycles();
+            int totalCycles = (targetDispenseCycles > 0 ? targetDispenseCycles : 1);
+            float progressFraction = (1.0 - (float)currentRem / totalCycles);
+            int percent = (int)(progressFraction * 100.0);
+            if (percent < 0) percent = 0;
+            if (percent > 100) percent = 100;
+            doc["progress"] = percent;
+        } else {
+            doc["progress"] = 0;
+        }
     }
     
     bleManager.notifyStatus(doc);
@@ -223,12 +332,11 @@ void loop() {
       if (currentState == STATE_DISPENSING) {
           int remainingCycles = getRemainingDispenseCycles(); 
           int completedCycles = targetDispenseCycles - remainingCycles;
-          float percentageCompleted = (float)completedCycles / (targetDispenseCycles > 0 ? targetDispenseCycles : 1);
-          float totalExpected = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0);
-          float actualDispensed = totalExpected * percentageCompleted;
-          spices[pendingTargetTubeIndex].level -= (int)actualDispensed;
-          if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
-          saveGlobalSpices(); 
+          if (completedCycles < 0) completedCycles = 0;
+          if (completedCycles > targetDispenseCycles) completedCycles = targetDispenseCycles;
+          
+          // Deduct only what was actually dispensed
+          applyDispensedSpiceLevel(completedCycles);
       }
       isRecipeMode = false;
       isInitialCheck = false;
@@ -590,7 +698,7 @@ void loop() {
            } else {
                 lcd.showOperationView("MISMATCH!", "Found: " + detectedSpice, 0, "ERROR: WRONG SPICE", "Exit");
            }
-           bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1);
+           bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1, true);
            if (STATE_TIMEOUT(3000)) {
                if (isInitialCheck) changeState(STATE_EMPTY_RETRY); 
                else prepareReturnHome();
@@ -673,6 +781,46 @@ void loop() {
           if (currentSelection > 1) currentSelection--;
       } else if (key == 'N') {
            servingsCount = currentSelection;
+           
+           // Pre-validate all ingredients in selected recipe
+           bool allIngredientsAvailable = true;
+           String missingOrLowSpice = "";
+           bool isLow = false;
+           
+           for (int i = 0; i < recipes[currentRecipeIndex].ingredientCount; i++) {
+               RecipeItem rItem = recipes[currentRecipeIndex].ingredients[i];
+               int targetSlot = findSlotByName(rItem.spiceName);
+               if (targetSlot == -1) {
+                   allIngredientsAvailable = false;
+                   missingOrLowSpice = rItem.spiceName;
+                   isLow = false;
+                   break;
+               } else {
+                   float requestedGrams = rItem.quantityGrams * servingsCount;
+                   float availableGrams = (spices[targetSlot].level / 100.0f) * MAX_SPICE_GRAMS;
+                   if (requestedGrams > availableGrams) {
+                       allIngredientsAvailable = false;
+                       missingOrLowSpice = spices[targetSlot].name;
+                       isLow = true;
+                       break;
+                   }
+               }
+           }
+           
+           if (!allIngredientsAvailable) {
+               if (isLow) {
+                   Serial.printf("[ERROR] Local Recipe rejected: Insufficient spice for '%s'.\n", missingOrLowSpice.c_str());
+                   lcd.showOperationView("EMPTY!", missingOrLowSpice, 0, "Insuff. Spice", "Exit");
+                   bleManager.sendAlert("low_spice", findSlotByName(missingOrLowSpice) + 1, true);
+               } else {
+                   Serial.printf("[ERROR] Local Recipe rejected: Missing spice '%s' on machine.\n", missingOrLowSpice.c_str());
+                   lcd.showOperationView("ERROR!", "Missing Ingredient", 0, missingOrLowSpice, "Exit");
+                   bleManager.sendAlert("missing_ingredient", 0, true);
+               }
+               changeState(STATE_EMPTY_RETRY);
+               break;
+           }
+
            currentIngredientIndex = 0;    
            isRecipeMode = true;
            lcd.showOperationView("PREPARING", recipes[currentRecipeIndex].name, 0, "Initializing...", "Abort");
@@ -718,6 +866,19 @@ void loop() {
       } else if (key == 'N') {
               manualQuantityInput = currentSelection;
               targetDispenseCycles = manualQuantityInput * CYCLES_PER_THEELEPEL;
+              
+              // Calculate requested grams and verify loaded spice capacity
+              float requestedGrams = targetDispenseCycles * GRAMS_PER_CYCLE;
+              float availableGrams = (spices[pendingTargetTubeIndex].level / 100.0f) * MAX_SPICE_GRAMS;
+              
+              if (requestedGrams > availableGrams) {
+                  Serial.printf("[ERROR] Manual dispense rejected: Needs %.1fg but only %.1fg available in Slot %d '%s'.\n", 
+                                requestedGrams, availableGrams, pendingTargetTubeIndex + 1, spices[pendingTargetTubeIndex].name.c_str());
+                  lcd.showOperationView("EMPTY!", spices[pendingTargetTubeIndex].name, 0, "Insuff. Spice", "Exit");
+                  bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1, true);
+                  changeState(STATE_EMPTY_RETRY);
+                  break;
+              }
               
               if (pendingTargetTubeIndex != getCurrentSlotIndex()) {
                 Serial.printf("[MANUAL] Rotating to target %d...\n", pendingTargetTubeIndex + 1);
@@ -780,7 +941,7 @@ void loop() {
             if (!isInitialCheck) {
                 lcd.showOperationView("EMPTY!", spices[pendingTargetTubeIndex].name, 0, "Needs Refill", "Exit");
             }
-            bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
+            bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1, true);
             changeState(STATE_EMPTY_RETRY);
           }
       }
@@ -827,12 +988,9 @@ void loop() {
       if (!isDispensing()) {
           Serial.println("[DISPENSER] Cycle complete.");
           lastRem = -1;
-          float dispensed = isRecipeMode ? currentRecipeGrams : (manualQuantityInput * 5.0); 
-          spices[pendingTargetTubeIndex].level -= (int)dispensed;
-          if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
-          saveGlobalSpices(); 
           
-          if (spices[pendingTargetTubeIndex].level < 15) bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1);
+          // Deduct level using completed cycles
+          applyDispensedSpiceLevel(targetDispenseCycles);
 
           if (isRecipeMode) {
             ingredientDispensed[currentIngredientIndex] = true; // Mark as dispensed!
@@ -850,6 +1008,14 @@ void loop() {
             if (anyLeft) {
                startRecipeSearch();
             } else {
+               // Send the final 100% complete status packet
+               JsonDocument doc;
+               doc["type"] = "status";
+               doc["state"] = "idle";
+               doc["active_recipe"] = (currentRecipeIndex == -1 ? "Remote" : recipes[currentRecipeIndex].name);
+               doc["progress"] = 100;
+               bleManager.notifyStatus(doc);
+               
                lcd.showOperationView("COMPLETE", "Recipe Finished", 100, "Enjoy!", "Back");
                delay(1500);
                isRecipeMode = false;
@@ -857,6 +1023,14 @@ void loop() {
                disableStepperMotor();
             }
           } else {
+            // Send final 100% complete status packet for manual mode
+            JsonDocument doc;
+            doc["type"] = "status";
+            doc["state"] = "idle";
+            doc["active_recipe"] = "Manual";
+            doc["progress"] = 100;
+            bleManager.notifyStatus(doc);
+
             lcd.showOperationView("COMPLETE", "Manual Done", 100, "Enjoy!", "Back");
             delay(1500);
             changeState(STATE_MAIN_MENU);
@@ -934,7 +1108,7 @@ void startRecipeSearch() {
    if (searchStepCount >= TOTAL_TUBES) {
        Serial.println("[RECIPE] [ERROR] Full circle searched but could not find all recipe ingredients!");
        lcd.showOperationView("ERROR!", "Ingredient Missing", 0, "Recipe Terminated", "Exit");
-       bleManager.sendAlert("missing_ingredient", 0);
+       bleManager.sendAlert("missing_ingredient", 0, true);
        isRecipeMode = false;
        changeState(STATE_MAIN_MENU);
        return;

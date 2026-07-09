@@ -62,6 +62,7 @@ const long WAIT_DURATION_FILLED = 5000;
 const long MATCH_THRESHOLD = 150; 
 
 // Dispensing Calibration
+const float MAX_SPICE_GRAMS = 150.0; // Physical capacity of each tube in grams
 const float GRAMS_PER_CYCLE = 0.2;
 const int CYCLES_PER_THEELEPEL = 10; 
 
