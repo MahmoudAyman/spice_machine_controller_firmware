@@ -23,7 +23,7 @@ public:
     // Status reporting
     void notifyStatus(JsonDocument& doc);
     void notifyLevels(JsonDocument& doc);
-    void sendAlert(const char* code, int slot);
+    void sendAlert(const char* code, int slot, bool blocking = false);
     
     bool isConnected() { return _deviceConnected; }
     int getBleStatus() {

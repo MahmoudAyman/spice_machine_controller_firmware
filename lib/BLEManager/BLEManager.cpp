@@ -197,7 +197,10 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
         }
         else if (strcmp(type, "dispense") == 0) {
             Serial.println("BLE: DISPENSE COMMAND");
-            if (currentState != STATE_MAIN_MENU) {
+            
+            // --- Atomic Mutual Exclusion Lock (Prevents rapid double-trigger retransmissions) ---
+            if (currentState != STATE_MAIN_MENU || remoteRequestTriggered) {
+                Serial.println("[BLE WARNING] Rejected duplicate dispense command (Machine Busy).");
                 JsonDocument nak;
                 nak["type"] = "ack";
                 nak["command"] = "dispense";
@@ -251,6 +254,65 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 nak["command"] = "dispense";
                 nak["status"] = "fail";
                 nak["reason"] = "missing_data";
+                notifyStatus(nak);
+                return;
+            }
+
+            // --- Atomic Pre-Dispense Verification (All Ingredients & Fill Levels) ---
+            bool allIngredientsValid = true;
+            String invalidReason = "";
+            String invalidSpiceDetail = "";
+            
+            for (int i = 0; i < remoteRecipe.ingredientCount; i++) {
+                String ingName = remoteRecipe.ingredients[i].spiceName;
+                ingName.trim();
+                ingName.toUpperCase();
+                
+                if (ingName.length() == 0) continue;
+                
+                int targetSlot = -1;
+                for (int s = 0; s < NUM_SPICES; s++) {
+                    String regName = spices[s].name;
+                    regName.trim();
+                    regName.toUpperCase();
+                    
+                    if (regName.length() > 0 && 
+                        (regName == ingName || 
+                         regName.indexOf(ingName) != -1 || 
+                         ingName.indexOf(regName) != -1)) {
+                        targetSlot = s;
+                        break;
+                    }
+                }
+                
+                if (targetSlot == -1) {
+                    allIngredientsValid = false;
+                    invalidReason = "missing_ingredient";
+                    invalidSpiceDetail = remoteRecipe.ingredients[i].spiceName;
+                    break;
+                }
+                
+                // Calculate available grams based on global physical slot capacity
+                float availableGrams = (spices[targetSlot].level / 100.0f) * MAX_SPICE_GRAMS;
+                float requestedGrams = remoteRecipe.ingredients[i].quantityGrams;
+                
+                if (requestedGrams > availableGrams) {
+                    allIngredientsValid = false;
+                    invalidReason = "insufficient_spice";
+                    invalidSpiceDetail = spices[targetSlot].name;
+                    Serial.printf("[ERROR] BLE Dispense rejected: Ingredient '%s' needs %.1fg, only %.1fg available (Level: %d%%).\n",
+                                  spices[targetSlot].name.c_str(), requestedGrams, availableGrams, spices[targetSlot].level);
+                    break;
+                }
+            }
+            
+            if (!allIngredientsValid) {
+                JsonDocument nak;
+                nak["type"] = "ack";
+                nak["command"] = "dispense";
+                nak["status"] = "fail";
+                nak["reason"] = invalidReason;
+                nak["detail"] = invalidSpiceDetail;
                 notifyStatus(nak);
                 return;
             }
@@ -516,12 +578,13 @@ void BLEManager::notifyLevels(JsonDocument& doc) {
     }
 }
 
-void BLEManager::sendAlert(const char* code, int slot) {
+void BLEManager::sendAlert(const char* code, int slot, bool blocking) {
     if (_deviceConnected) {
         JsonDocument doc;
         doc["type"] = "alert";
         doc["code"] = code;
         doc["slot"] = slot;
+        doc["blocking"] = blocking;
         notifyStatus(doc);
     }
 }
