@@ -37,6 +37,7 @@ void loadGlobalSpices() {
             spices[i].r_val = 0;
             spices[i].g_val = 0;
             spices[i].b_val = 0;
+            spices[i].expiry = 0;
         }
         return;
     }
@@ -63,6 +64,7 @@ void loadGlobalSpices() {
         spices[i].r_val = obj["r_val"] | 0; 
         spices[i].g_val = obj["g_val"] | 0;
         spices[i].b_val = obj["b_val"] | 0;
+        spices[i].expiry = obj["e"] | 0;
         i++;
     }
     Serial.println("Global Spices loaded successfully.");
@@ -84,6 +86,7 @@ void saveGlobalSpices() {
         obj["r_val"] = spices[i].r_val;
         obj["g_val"] = spices[i].g_val;
         obj["b_val"] = spices[i].b_val;
+        obj["e"] = spices[i].expiry;
     }
 
     if (serializeJson(doc, file) == 0) {

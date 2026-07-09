@@ -9,6 +9,7 @@ struct Spice {
   String name;
   int r_val, g_val, b_val;
   int level; // Current fill level (0-100)
+  uint32_t expiry; // Expiry epoch timestamp (0 if not set)
 };
 
 struct RecipeItem {

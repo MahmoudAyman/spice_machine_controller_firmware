@@ -168,13 +168,14 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             notifyLevels(startDoc);
             delay(15);
             
-            // 2. Stream individual items (using abbreviated keys 's', 'n', 'l')
+            // 2. Stream individual items (using abbreviated keys 's', 'n', 'l', 'e')
             for (int i = 0; i < NUM_SPICES; i++) {
                 JsonDocument itemDoc;
                 itemDoc["type"] = "manifest_item";
                 itemDoc["s"] = i + 1;
                 itemDoc["n"] = spices[i].name;
                 itemDoc["l"] = spices[i].level;
+                itemDoc["e"] = spices[i].expiry;
                 notifyLevels(itemDoc);
                 delay(15); // Essential delay to let the BLE queue clear and transmit
             }
@@ -381,6 +382,14 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             if (slot >= 1 && slot <= NUM_SPICES && name) {
                 Serial.printf("[DEBUG] Updating slot %d to %s. Saving to GLOBAL config.\n", slot, name);
                 spices[slot - 1].name = String(name);
+                
+                // Read optional expiry epoch timestamp
+                if (doc["expiry"].is<uint32_t>()) {
+                    spices[slot - 1].expiry = doc["expiry"];
+                } else if (doc["e"].is<uint32_t>()) {
+                    spices[slot - 1].expiry = doc["e"];
+                }
+                
                 saveGlobalSpices();
                 
                 JsonDocument ack;
@@ -403,6 +412,14 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             if (slot >= 1 && slot <= NUM_SPICES) {
                 Serial.printf("[DEBUG] Refilling slot %d to 100%%. Saving to GLOBAL profile.\n", slot);
                 spices[slot - 1].level = 100;
+                
+                // Read optional expiry epoch timestamp for the newly refilled spice
+                if (doc["expiry"].is<uint32_t>()) {
+                    spices[slot - 1].expiry = doc["expiry"];
+                } else if (doc["e"].is<uint32_t>()) {
+                    spices[slot - 1].expiry = doc["e"];
+                }
+                
                 saveGlobalSpices();
 
                 JsonDocument ack;

@@ -140,31 +140,38 @@ Request the current fill levels of all 20 slots. Responses are sent on SYNC.
 ```
 
 ### 3.8 Get Manifest
-Request the full Spice Manifest (slot number, name, and fill level for all 20 slots) to sync the app's database. Responses are sent on SYNC.
+Request the full Spice Manifest (slot number, name, fill level, and optional expiry epoch for all 20 slots) to sync the app's database. Responses are sent on SYNC.
 ```json
 {"type": "get_manifest"}
 ```
-**Response (SYNC):**
+**Response Stream (SYNC):**
+1. Start Stream: `{"type": "manifest_start", "total": 20}`
+2. Streaming Item (for slots 1 to 20):
+```json
+{"type": "manifest_item", "s": 1, "n": "Cinnamon", "l": 100, "e": 1798675200}
+```
+*Note:* `e` is the Unix Epoch Expiry Date timestamp (seconds since Jan 1, 1970). It is `0` if not set or unspecified.
+3. End Stream: `{"type": "manifest_end"}`
+
+### 3.9 Update Slot (Global Configuration)
+Update the spice name and optional expiry date for a specific slot. This configures the global machine state and persists to persistent memory.
 ```json
 {
-  "type": "manifest",
-  "spices": [
-    {"slot": 1, "name": "Cinnamon", "level": 100},
-    {"slot": 2, "name": "Oregano", "level": 85}
-  ]
+  "type": "update_slot",
+  "slot": 3,
+  "name": "Smoked Paprika",
+  "expiry": 1798675200 // Optional: Unix epoch expiry timestamp (can use key "e" as abbreviation)
 }
 ```
 
-### 3.9 Update Slot (Global Configuration)
-Update the spice name for a specific slot. This configures the global machine state and persists to persistent memory.
-```json
-{"type": "update_slot", "slot": 3, "name": "Smoked Paprika"}
-```
-
 ### 3.10 Refill Slot
-Resets the fill level of a specific slot to 100% and persists to persistent memory.
+Resets the fill level of a specific slot to 100% and optionally updates its expiry date. Persists to LittleFS.
 ```json
-{"type": "refill", "slot": 4}
+{
+  "type": "refill",
+  "slot": 4,
+  "expiry": 1798675200 // Optional: Unix epoch expiry timestamp for the newly refilled spice (can use key "e" as abbreviation)
+}
 ```
 
 ### 3.11 Toggle Simulation
