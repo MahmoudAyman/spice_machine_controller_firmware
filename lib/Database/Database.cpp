@@ -4,7 +4,6 @@
 
 const int NUM_SPICES = 20;
 int activeRecipeCount = 0;
-String activeProfileUUID = "";
 bool isMachineConfigured = false;
 
 // The working arrays in RAM
@@ -94,98 +93,6 @@ void saveGlobalSpices() {
         Serial.println("Global Spices saved to LittleFS.");
     }
     file.close();
-}
-
-bool loadProfile(String uuid) {
-    String path = "/profile_" + uuid + ".json";
-    activeProfileUUID = uuid; // Keep it active even if it's new
-    
-    if (!LittleFS.exists(path)) {
-        Serial.printf("Profile for UUID %s not found. Initializing empty profile.\n", uuid.c_str());
-        activeRecipeCount = 0; // Force user to configure their own recipes
-        return false; // Does not exist, needs sync from App
-    }
-
-    File file = LittleFS.open(path, "r");
-    if (!file) return false;
-
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, file);
-    file.close();
-
-    if (error) {
-        Serial.println("Failed to parse profile JSON");
-        return false;
-    }
-
-    // Load Recipes ONLY (Spices are now global)
-    JsonArray recipesArr = doc["recipes"];
-    activeRecipeCount = 0;
-    for (JsonObject rObj : recipesArr) {
-        if (activeRecipeCount >= MAX_RECIPES) break;
-        String fallbackId = "temp_" + String(activeRecipeCount);
-        recipes[activeRecipeCount].id = rObj["id"] | fallbackId;
-        recipes[activeRecipeCount].name = rObj["name"].as<String>();
-        
-        JsonArray ingredientsArr = rObj["ingredients"];
-        recipes[activeRecipeCount].ingredientCount = 0;
-        
-        for (JsonObject iObj : ingredientsArr) {
-            if (recipes[activeRecipeCount].ingredientCount >= 10) break;
-            int idx = recipes[activeRecipeCount].ingredientCount;
-            recipes[activeRecipeCount].ingredients[idx].spiceName = iObj["name"] | "";
-            recipes[activeRecipeCount].ingredients[idx].quantityGrams = iObj["grams"].as<float>();
-            recipes[activeRecipeCount].ingredientCount++;
-        }
-        activeRecipeCount++;
-    }
-
-    Serial.printf("Profile %s recipes loaded successfully.\n", uuid.c_str());
-    return true;
-}
-
-void saveProfile() {
-    if (activeProfileUUID == "") {
-        Serial.println("Cannot save recipes: No active profile set.");
-        return;
-    }
-
-    String path = "/profile_" + activeProfileUUID + ".json";
-    File file = LittleFS.open(path, "w");
-    if (!file) {
-        Serial.println("Failed to open profile file for writing");
-        return;
-    }
-
-    JsonDocument doc;
-    
-    // Save Recipes ONLY
-    JsonArray recipesArr = doc["recipes"].to<JsonArray>();
-    for (int i = 0; i < activeRecipeCount; i++) {
-        JsonObject rObj = recipesArr.add<JsonObject>();
-        rObj["id"] = recipes[i].id;
-        rObj["name"] = recipes[i].name;
-        JsonArray ingredientsArr = rObj["ingredients"].to<JsonArray>();
-        for (int j = 0; j < recipes[i].ingredientCount; j++) {
-            JsonObject iObj = ingredientsArr.add<JsonObject>();
-            iObj["name"] = recipes[i].ingredients[j].spiceName;
-            iObj["grams"] = recipes[i].ingredients[j].quantityGrams;
-        }
-    }
-
-    if (serializeJson(doc, file) == 0) {
-        Serial.println("Failed to write profile to file");
-    }
-    file.close();
-    Serial.printf("Profile %s saved to LittleFS\n", activeProfileUUID.c_str());
-}
-
-void deleteProfile(String uuid) {
-    String path = "/profile_" + uuid + ".json";
-    if (LittleFS.exists(path)) {
-        LittleFS.remove(path);
-        Serial.printf("Profile %s deleted.\n", uuid.c_str());
-    }
 }
 
 void factoryResetDatabase() {

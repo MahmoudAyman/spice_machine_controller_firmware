@@ -136,16 +136,15 @@ void setup() {
   Serial.println("[INIT] Loading Global Spices...");
   loadGlobalSpices();
 
-  if (activeProfileUUID == "") {
-      activeRecipeCount = 1;
-      recipes[0].id = "def_1";
-      recipes[0].name = "Motion Test";
-      recipes[0].ingredientCount = 2;
-      recipes[0].ingredients[0].spiceName = "BLACK";
-      recipes[0].ingredients[0].quantityGrams = 1.0;
-      recipes[0].ingredients[1].spiceName = "BLUE";
-      recipes[0].ingredients[1].quantityGrams = 1.0;
-  }
+  // Initialize default volatile diagnostic recipe
+  activeRecipeCount = 1;
+  recipes[0].id = "def_1";
+  recipes[0].name = "Motion Test";
+  recipes[0].ingredientCount = 2;
+  recipes[0].ingredients[0].spiceName = "BLACK";
+  recipes[0].ingredients[0].quantityGrams = 1.0;
+  recipes[0].ingredients[1].spiceName = "BLUE";
+  recipes[0].ingredients[1].quantityGrams = 1.0;
 
   Serial.println("[INIT] Initializing Hardware Drivers...");
   initHardware(); 

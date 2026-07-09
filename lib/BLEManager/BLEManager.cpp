@@ -12,12 +12,8 @@ void BLEManager::ServerCallbacks::onDisconnect(BLEServer* pServer) {
     _parent->_deviceConnected = false; 
     _parent->_disconnectAtMs = millis(); 
     
-    // Save the profile when the app disconnects
-    if (activeProfileUUID != "") {
-        saveProfile();
-    }
     // We no longer fallback to a default profile. The machine continues 
-    // using the last active profile for physical keypad usage, while
+    // using the global configurations for physical keypad usage, while
     // spice levels remain perfectly in sync globally.
 }
 
@@ -125,11 +121,6 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             // Ensure global spices are loaded (in case app forces a re-sync)
             loadGlobalSpices();
 
-            if (uuid) {
-                String uuidStr = String(uuid);
-                loadProfile(uuidStr);
-            }
-
             JsonDocument ack;
             ack["type"] = "ack";
             ack["command"] = "handshake";
@@ -159,6 +150,32 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 data[String(i + 1)] = spices[i].level;
             }
             notifyLevels(levels);
+        }
+        else if (strcmp(type, "get_manifest") == 0) {
+            Serial.println("BLE: GET_MANIFEST (Streaming)");
+            
+            // 1. Send Start packet
+            JsonDocument startDoc;
+            startDoc["type"] = "manifest_start";
+            startDoc["total"] = NUM_SPICES;
+            notifyLevels(startDoc);
+            delay(15);
+            
+            // 2. Stream individual items (using abbreviated keys 's', 'n', 'l')
+            for (int i = 0; i < NUM_SPICES; i++) {
+                JsonDocument itemDoc;
+                itemDoc["type"] = "manifest_item";
+                itemDoc["s"] = i + 1;
+                itemDoc["n"] = spices[i].name;
+                itemDoc["l"] = spices[i].level;
+                notifyLevels(itemDoc);
+                delay(15); // Essential delay to let the BLE queue clear and transmit
+            }
+            
+            // 3. Send End packet
+            JsonDocument endDoc;
+            endDoc["type"] = "manifest_end";
+            notifyLevels(endDoc);
         }
         else if (strcmp(type, "toggle_sim") == 0) {
             simulationEnabled = !simulationEnabled;
@@ -237,50 +254,76 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             ack["status"] = "success";
             notifyStatus(ack);
         }
-        else if (strcmp(type, "sync_recipes") == 0) {
-            Serial.println("BLE: SYNC_RECIPES");
-            JsonArray recipesArr = doc["recipes"];
-            if (!recipesArr.isNull()) {
-                activeRecipeCount = 0;
-                for (JsonObject rObj : recipesArr) {
-                    if (activeRecipeCount >= MAX_RECIPES) break;
-                    String fallbackId = "temp_" + String(activeRecipeCount);
-                    recipes[activeRecipeCount].id = rObj["id"] | fallbackId;
-                    recipes[activeRecipeCount].name = rObj["name"].as<String>();
-                    JsonArray ingredientsArr = rObj["ingredients"];
-                    recipes[activeRecipeCount].ingredientCount = 0;
-                    for (JsonObject iObj : ingredientsArr) {
-                        if (recipes[activeRecipeCount].ingredientCount >= 10) break;
-                        int idx = recipes[activeRecipeCount].ingredientCount;
-                        recipes[activeRecipeCount].ingredients[idx].spiceName = iObj["name"] | "";
-                        recipes[activeRecipeCount].ingredients[idx].quantityGrams = iObj["grams"].as<float>();
-                        recipes[activeRecipeCount].ingredientCount++;
-                    }
-                    activeRecipeCount++;
+        else if (strcmp(type, "sync_recipes_start") == 0) {
+            Serial.println("BLE: SYNC_RECIPES_START");
+            activeRecipeCount = 0;
+            
+            JsonDocument ack;
+            ack["type"] = "ack";
+            ack["command"] = "sync_recipes_start";
+            ack["status"] = "success";
+            notifyStatus(ack);
+        }
+        else if (strcmp(type, "sync_recipe_item") == 0) {
+            int idx = doc["index"];
+            Serial.printf("BLE: SYNC_RECIPE_ITEM [%d]\n", idx);
+            if (idx >= 0 && idx < MAX_RECIPES) {
+                String rId = "temp_" + String(idx);
+                if (doc["id"].is<const char*>()) {
+                    rId = doc["id"].as<String>();
                 }
-                saveProfile();
+                recipes[idx].id = rId;
+                recipes[idx].name = doc["n"].as<String>();
+                
+                JsonArray ingredientsArr = doc["i"];
+                recipes[idx].ingredientCount = 0;
+                if (!ingredientsArr.isNull()) {
+                    for (JsonObject iObj : ingredientsArr) {
+                        if (recipes[idx].ingredientCount >= 10) break;
+                        int iIdx = recipes[idx].ingredientCount;
+                        recipes[idx].ingredients[iIdx].spiceName = iObj["n"] | "";
+                        recipes[idx].ingredients[iIdx].quantityGrams = iObj["g"].as<float>();
+                        recipes[idx].ingredientCount++;
+                    }
+                }
+                
+                if (idx + 1 > activeRecipeCount) {
+                    activeRecipeCount = idx + 1;
+                }
+                
                 JsonDocument ack;
                 ack["type"] = "ack";
-                ack["command"] = "sync_recipes";
+                ack["command"] = "sync_recipe_item";
+                ack["index"] = idx;
                 ack["status"] = "success";
-                ack["count"] = activeRecipeCount;
                 notifyStatus(ack);
             } else {
                 JsonDocument nak;
                 nak["type"] = "ack";
-                nak["command"] = "sync_recipes";
+                nak["command"] = "sync_recipe_item";
+                nak["index"] = idx;
                 nak["status"] = "fail";
+                nak["reason"] = "out_of_bounds";
                 notifyStatus(nak);
             }
+        }
+        else if (strcmp(type, "sync_recipes_end") == 0) {
+            Serial.println("BLE: SYNC_RECIPES_END");
+            
+            JsonDocument ack;
+            ack["type"] = "ack";
+            ack["command"] = "sync_recipes_end";
+            ack["status"] = "success";
+            notifyStatus(ack);
         }
         else if (strcmp(type, "update_slot") == 0) {
             Serial.println("BLE: UPDATE_SLOT");
             int slot = doc["slot"];
             const char* name = doc["name"];
             if (slot >= 1 && slot <= NUM_SPICES && name) {
-                Serial.printf("[DEBUG] Updating slot %d to %s. Saving to active profile.\n", slot, name);
+                Serial.printf("[DEBUG] Updating slot %d to %s. Saving to GLOBAL config.\n", slot, name);
                 spices[slot - 1].name = String(name);
-                saveProfile();
+                saveGlobalSpices();
                 
                 JsonDocument ack;
                 ack["type"] = "ack";
@@ -318,20 +361,21 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 notifyStatus(nak);
             }
         }
-        else if (strcmp(type, "print_profile") == 0) {
-            Serial.println("--- CURRENT PROFILE DEBUG ---");
-            Serial.printf("Active UUID: %s\n", activeProfileUUID.c_str());
-            Serial.printf("Total Recipes: %d\n", activeRecipeCount);
-            for(int i = 0; i < activeRecipeCount; i++) {
-                Serial.printf("[%d] ID: %s | Name: %s | Items: %d\n", i+1, recipes[i].id.c_str(), recipes[i].name.c_str(), recipes[i].ingredientCount);
-                for(int j = 0; j < recipes[i].ingredientCount; j++) {
-                    Serial.printf("  - Spice %s: %.1fg\n", recipes[i].ingredients[j].spiceName.c_str(), recipes[i].ingredients[j].quantityGrams);
-                }
+        else if (strcmp(type, "print_spices") == 0) {
+            Serial.println("--- CURRENT SPICES DEBUG ---");
+            for (int i = 0; i < NUM_SPICES; i++) {
+                Serial.printf("Slot %2d | Name: %-15s | Level: %3d%% | Raw Calibration: R:%3d, G:%3d, B:%3d\n",
+                              i + 1, 
+                              spices[i].name.c_str(), 
+                              spices[i].level,
+                              spices[i].r_val, 
+                              spices[i].g_val, 
+                              spices[i].b_val);
             }
             Serial.println("-----------------------------");
             JsonDocument ack;
             ack["type"] = "ack";
-            ack["command"] = "print_profile";
+            ack["command"] = "print_spices";
             ack["status"] = "success";
             notifyStatus(ack);
         }
