@@ -275,6 +275,57 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             int idx = doc["index"];
             Serial.printf("BLE: SYNC_RECIPE_ITEM [%d]\n", idx);
             if (idx >= 0 && idx < MAX_RECIPES) {
+                JsonArray ingredientsArr = doc["i"];
+                
+                // --- Atomic Ingredient Validation (Case-Insensitive Substring Match) ---
+                bool allIngredientsValid = true;
+                String invalidSpiceName = "";
+                
+                if (!ingredientsArr.isNull()) {
+                    for (JsonObject iObj : ingredientsArr) {
+                        String ingName = iObj["n"] | "";
+                        ingName.trim();
+                        ingName.toUpperCase();
+                        
+                        if (ingName.length() == 0) continue;
+                        
+                        bool found = false;
+                        for (int s = 0; s < NUM_SPICES; s++) {
+                            String registeredName = spices[s].name;
+                            registeredName.trim();
+                            registeredName.toUpperCase();
+                            
+                            if (registeredName.length() > 0 && 
+                                (registeredName == ingName || 
+                                 registeredName.indexOf(ingName) != -1 || 
+                                 ingName.indexOf(registeredName) != -1)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!found) {
+                            allIngredientsValid = false;
+                            invalidSpiceName = iObj["n"] | "";
+                            break;
+                        }
+                    }
+                }
+                
+                if (!allIngredientsValid) {
+                    Serial.printf("[ERROR] sync_recipe_item failed: Spice '%s' not available on machine.\n", invalidSpiceName.c_str());
+                    JsonDocument nak;
+                    nak["type"] = "ack";
+                    nak["command"] = "sync_recipe_item";
+                    nak["index"] = idx;
+                    nak["status"] = "fail";
+                    nak["reason"] = "invalid_ingredient";
+                    nak["detail"] = invalidSpiceName;
+                    notifyStatus(nak);
+                    return;
+                }
+                
+                // --- Validation Passed: Write to RAM ---
                 String rId = "temp_" + String(idx);
                 if (doc["id"].is<const char*>()) {
                     rId = doc["id"].as<String>();
@@ -282,7 +333,6 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 recipes[idx].id = rId;
                 recipes[idx].name = doc["n"].as<String>();
                 
-                JsonArray ingredientsArr = doc["i"];
                 recipes[idx].ingredientCount = 0;
                 if (!ingredientsArr.isNull()) {
                     for (JsonObject iObj : ingredientsArr) {

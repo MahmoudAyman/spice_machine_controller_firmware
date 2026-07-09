@@ -87,7 +87,22 @@ Streams a list of user recipes to the machine's RAM to populate the local physic
   ]
 }
 ```
-**Response (STATUS):** `{"type": "ack", "command": "sync_recipe_item", "index": 0, "status": "success"}`
+**Response (STATUS):**
+*Success:*
+```json
+{"type": "ack", "command": "sync_recipe_item", "index": 0, "status": "success"}
+```
+*Failure (if recipe contains a spice name not physically available in global physical slots):*
+```json
+{
+  "type": "ack",
+  "command": "sync_recipe_item",
+  "index": 0,
+  "status": "fail",
+  "reason": "invalid_ingredient",
+  "detail": "Saffron" // Name of the missing/unregistered spice
+}
+```
 
 **3. End Sync (Triggers LittleFS file write on ESP32):**
 ```json
