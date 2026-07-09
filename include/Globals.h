@@ -49,6 +49,10 @@ extern Recipe remoteRecipe;
 extern int pendingTargetTubeIndex;
 extern int currentSelection; 
 
+// --- App-Driven BLE Setup Globals ---
+extern String bleSetupNameReceived;
+extern bool bleSetupNamePending;
+
 // Function Prototypes
 void sendBleStatus();
 char getButtonKey();

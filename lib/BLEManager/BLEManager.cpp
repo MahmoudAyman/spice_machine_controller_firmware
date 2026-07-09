@@ -121,7 +121,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             // Ensure global spices are loaded (in case app forces a re-sync)
             loadGlobalSpices();
 
-            String statusStr = "ready";
+            String statusStr = "success";
             if (!isMachineConfigured) {
                 statusStr = "unconfigured";
             } else if (currentState == STATE_ERROR_RETURN) {
@@ -374,6 +374,32 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             ack["command"] = "sync_recipes_end";
             ack["status"] = "success";
             notifyStatus(ack);
+        }
+        else if (strcmp(type, "setup_slot_name") == 0) {
+            Serial.println("BLE: SETUP_SLOT_NAME");
+            const char* name = doc["name"];
+            Serial.printf("[BLE SETUP DEBUG] currentState: %d (Expected STATE_INITIAL_SETUP: 1), Name provided: '%s'\n", currentState, name ? name : "null");
+            
+            if (currentState == STATE_INITIAL_SETUP) {
+                if (name && strlen(name) > 0) {
+                    bleSetupNameReceived = String(name);
+                    bleSetupNamePending = true;
+                } else {
+                    JsonDocument nak;
+                    nak["type"] = "ack";
+                    nak["command"] = "setup_slot_name";
+                    nak["status"] = "fail";
+                    nak["reason"] = "empty_name";
+                    notifyStatus(nak);
+                }
+            } else {
+                JsonDocument nak;
+                nak["type"] = "ack";
+                nak["command"] = "setup_slot_name";
+                nak["status"] = "fail";
+                nak["reason"] = "invalid_state";
+                notifyStatus(nak);
+            }
         }
         else if (strcmp(type, "update_slot") == 0) {
             Serial.println("BLE: UPDATE_SLOT");

@@ -43,6 +43,8 @@ int servingsCount = 1;
 bool isTubeCurrentlyFilled = false;
 bool isRecipeMode = false;
 bool isInitialCheck = false;
+String bleSetupNameReceived = "";
+bool bleSetupNamePending = false;
 bool abortTriggered = false;
 bool remoteRequestTriggered = false;
 Recipe remoteRecipe;
@@ -385,6 +387,13 @@ void loop() {
           }
 
           case SETUP_AWAITING_NAME: {
+              if (bleSetupNamePending) {
+                  Serial.printf("[MAIN LOOP SETUP DEBUG] Detected bleSetupNamePending = true. Name = '%s'\n", bleSetupNameReceived.c_str());
+              }
+              bool nameReceived = false;
+              String inputName = "";
+              
+              // 1. Check Serial Monitor character-by-character
               static bool lastWasCR = false;
               while (Serial.available() > 0) {
                   char c = Serial.read();
@@ -396,65 +405,9 @@ void loop() {
 
                   if (c == '\n' || c == '\r') {
                       userInput.trim();
-                      
-                      // Sanitize name: keep only alphanumeric characters and single spaces
-                      String sanitizedName = "";
-                      bool lastWasSpace = false;
-                      for (unsigned int k = 0; k < userInput.length(); k++) {
-                          char ch = userInput[k];
-                          if (isalnum(ch)) {
-                              sanitizedName += ch;
-                              lastWasSpace = false;
-                          } else if (isspace(ch) || ch == '_' || ch == '-') {
-                              if (!lastWasSpace && sanitizedName.length() > 0) {
-                                  sanitizedName += ' ';
-                                  lastWasSpace = true;
-                              }
-                          }
-                      }
-                      sanitizedName.trim();
-
-                      String finalName = sanitizedName;
-                      if (finalName.length() == 0) {
-                          finalName = "Spice_" + String(currentTubeIndex + 1);
-                      }
-
-                      // Verify uniqueness among slots 0 to currentTubeIndex - 1
-                      bool isDuplicate = false;
-                      for (int s = 0; s < currentTubeIndex; s++) {
-                          String existingUpper = spices[s].name;
-                          existingUpper.toUpperCase();
-                          String checkUpper = finalName;
-                          checkUpper.toUpperCase();
-                          if (existingUpper == checkUpper) {
-                              isDuplicate = true;
-                              break;
-                          }
-                      }
-
-                      if (isDuplicate) {
-                          Serial.printf("\n[ERROR] Name '%s' is already assigned to a slot! All spice tube names must be unique.\n", finalName.c_str());
-                          Serial.printf("[SETUP] Please enter a UNIQUE name for Slot %d (Press Enter for default 'Spice_%d'):\n", 
-                                        currentTubeIndex + 1, currentTubeIndex + 1);
-                          userInput = "";
-                          break;
-                      }
-
-                      spices[currentTubeIndex].name = finalName;
-                      spices[currentTubeIndex].level = 100;
-
-                      Serial.printf("\n[SETUP] Slot %d successfully mapped to '%s'\n", currentTubeIndex + 1, finalName.c_str());
-
-                      currentTubeIndex++;
-                      if (currentTubeIndex < TOTAL_TUBES) {
-                          setupSubState = SETUP_INIT_TUBE;
-                      } else {
-                          Serial.println("[SETUP] All slots configured. Saving to LittleFS...");
-                          saveGlobalSpices();
-                          disableStepperMotor();
-                          prepareReturnHome();
-                      }
+                      inputName = userInput;
                       userInput = "";
+                      nameReceived = true;
                       break;
                   } else if (c == 8 || c == 127) { // Backspace
                       if (userInput.length() > 0) {
@@ -465,6 +418,96 @@ void loop() {
                       userInput += c;
                       Serial.print(c); // Echo back to serial monitor
                   }
+              }
+              
+              // 2. Check BLE Input if no serial input was finalized
+              if (!nameReceived && bleSetupNamePending) {
+                  inputName = bleSetupNameReceived;
+                  bleSetupNamePending = false;
+                  nameReceived = true;
+                  Serial.printf("[BLE SETUP INPUT] Received name: %s\n", inputName.c_str());
+              }
+
+              if (nameReceived) {
+                  inputName.trim();
+                  
+                  // Sanitize name: keep only alphanumeric characters and single spaces
+                  String sanitizedName = "";
+                  bool lastWasSpace = false;
+                  for (unsigned int k = 0; k < inputName.length(); k++) {
+                      char ch = inputName[k];
+                      if (isalnum(ch)) {
+                          sanitizedName += ch;
+                          lastWasSpace = false;
+                      } else if (isspace(ch) || ch == '_' || ch == '-') {
+                          if (!lastWasSpace && sanitizedName.length() > 0) {
+                              sanitizedName += ' ';
+                              lastWasSpace = true;
+                          }
+                      }
+                  }
+                  sanitizedName.trim();
+
+                  String finalName = sanitizedName;
+                  if (finalName.length() == 0) {
+                      finalName = "Spice_" + String(currentTubeIndex + 1);
+                  }
+
+                  // Verify uniqueness among slots 0 to currentTubeIndex - 1
+                  bool isDuplicate = false;
+                  for (int s = 0; s < currentTubeIndex; s++) {
+                      String existingUpper = spices[s].name;
+                      existingUpper.toUpperCase();
+                      String checkUpper = finalName;
+                      checkUpper.toUpperCase();
+                      if (existingUpper == checkUpper) {
+                          isDuplicate = true;
+                          break;
+                      }
+                  }
+
+                  if (isDuplicate) {
+                      Serial.printf("\n[ERROR] Name '%s' is already assigned to a slot! All spice tube names must be unique.\n", finalName.c_str());
+                      
+                      // Notify BLE that name registration failed
+                      JsonDocument nak;
+                      nak["type"] = "ack";
+                      nak["command"] = "setup_slot_name";
+                      nak["status"] = "fail";
+                      nak["reason"] = "duplicate_name";
+                      nak["detail"] = finalName;
+                      bleManager.notifyStatus(nak);
+                      
+                      Serial.printf("[SETUP] Please enter a UNIQUE name for Slot %d (Press Enter for default 'Spice_%d'):\n", 
+                                    currentTubeIndex + 1, currentTubeIndex + 1);
+                      break;
+                  }
+
+                  spices[currentTubeIndex].name = finalName;
+                  spices[currentTubeIndex].level = 100;
+                  spices[currentTubeIndex].expiry = 0; // Default to 0
+
+                  Serial.printf("\n[SETUP] Slot %d successfully mapped to '%s'\n", currentTubeIndex + 1, finalName.c_str());
+
+                  // Notify BLE of successful mapping
+                  JsonDocument ack;
+                  ack["type"] = "ack";
+                  ack["command"] = "setup_slot_name";
+                  ack["status"] = "success";
+                  ack["slot"] = currentTubeIndex + 1;
+                  ack["name"] = finalName;
+                  bleManager.notifyStatus(ack);
+
+                  currentTubeIndex++;
+                  if (currentTubeIndex < TOTAL_TUBES) {
+                      setupSubState = SETUP_INIT_TUBE;
+                  } else {
+                      Serial.println("[SETUP] All slots configured. Saving to LittleFS...");
+                      saveGlobalSpices();
+                      disableStepperMotor();
+                      prepareReturnHome();
+                  }
+                  break;
               }
               break;
           }
