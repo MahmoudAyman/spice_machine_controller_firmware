@@ -33,6 +33,15 @@ Always send this first to register your app.
 ```json
 {"type": "handshake", "uuid": "user-unique-id-123", "version": 1}
 ```
+**Response (STATUS Characteristic):**
+```json
+{
+  "type": "ack",
+  "command": "handshake",
+  "status": "ready",     // "ready" (configured), "unconfigured" (needs setup), or "error"
+  "new_device": false    // true if machine is unconfigured
+}
+```
 
 ### 3.2 Ping
 Test connection latency. Returns a `pong` message on STATUS.
@@ -54,23 +63,37 @@ Trigger a multi-ingredient dispense.
 }
 ```
 
-### 3.4 Sync Recipes (Volatile)
-Syncs a list of user recipes to the machine's RAM to populate the local physical LCD menu. Max 30 recipes, 10 ingredients each.
-**Note:** These recipes are volatile and reset on reboot.
+### 3.4 Sync Recipes (Streamed / Persistent Cache)
+Streams a list of user recipes to the machine's RAM to populate the local physical LCD menu. Max 30 recipes, 10 ingredients each. On successful completion (`sync_recipes_end`), the machine caches these recipes persistently to LittleFS so they survive disconnections and reboots, but get overwritten when another user connects and syncs.
+
+*Key Abbreviations:* `n` = Name, `i` = Ingredients array, `g` = Grams.
+
+**1. Start Sync:**
+```json
+{"type": "sync_recipes_start", "total": 5}
+```
+**Response (STATUS):** `{"type": "ack", "command": "sync_recipes_start", "status": "success"}`
+
+**2. Stream Item (Repeat for each recipe, `index` 0 to N-1):**
 ```json
 {
-  "type": "sync_recipes",
-  "recipes": [
-    {
-      "id": "recipe_1",
-      "name": "Quick Garlic Mix",
-      "ingredients": [
-        {"name": "Garlic Powder", "grams": 2.5}
-      ]
-    }
+  "type": "sync_recipe_item",
+  "index": 0,
+  "id": "rec_1",
+  "n": "Italian Mix",
+  "i": [
+    {"n": "Oregano", "g": 2.0},
+    {"n": "Garlic", "g": 1.0}
   ]
 }
 ```
+**Response (STATUS):** `{"type": "ack", "command": "sync_recipe_item", "index": 0, "status": "success"}`
+
+**3. End Sync (Triggers LittleFS file write on ESP32):**
+```json
+{"type": "sync_recipes_end"}
+```
+**Response (STATUS):** `{"type": "ack", "command": "sync_recipes_end", "status": "success"}`
 
 ### 3.5 Emergency Stop (Abort)
 Stops all motors instantly, saves remaining spice level, and returns the machine home.

@@ -35,6 +35,8 @@ bool initStorage();
 void formatStorage();
 void loadGlobalSpices();
 void saveGlobalSpices();
+void loadRecipesCache();
+void saveRecipesCache();
 void factoryResetDatabase();
 
 #endif

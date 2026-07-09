@@ -93,7 +93,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             return;
         }
 
-        Serial.printf("BLE Command Parsed: %s\n", _rxBuffer.c_str());
+        Serial.printf("[BLE RECV] %s\n", _rxBuffer.c_str());
         _rxBuffer.clear(); // Successfully parsed, reset buffer for next command
 
         const char* type = doc["type"];
@@ -121,10 +121,17 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             // Ensure global spices are loaded (in case app forces a re-sync)
             loadGlobalSpices();
 
+            String statusStr = "ready";
+            if (!isMachineConfigured) {
+                statusStr = "unconfigured";
+            } else if (currentState == STATE_ERROR_RETURN) {
+                statusStr = "error";
+            }
+
             JsonDocument ack;
             ack["type"] = "ack";
             ack["command"] = "handshake";
-            ack["status"] = isMachineConfigured ? "success" : "unconfigured";
+            ack["status"] = statusStr;
             ack["new_device"] = !isMachineConfigured;
             notifyStatus(ack);
         }
@@ -309,6 +316,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
         }
         else if (strcmp(type, "sync_recipes_end") == 0) {
             Serial.println("BLE: SYNC_RECIPES_END");
+            saveRecipesCache(); // Save cached recipes persistently
             
             JsonDocument ack;
             ack["type"] = "ack";
@@ -399,6 +407,7 @@ void BLEManager::notifyStatus(JsonDocument& doc) {
     if (_deviceConnected) {
         char buffer[1024];
         serializeJson(doc, buffer);
+        Serial.printf("[BLE SEND STATUS] %s\n", buffer);
         _pStatusChar->setValue(buffer);
         _pStatusChar->notify();
     }
@@ -408,6 +417,7 @@ void BLEManager::notifyLevels(JsonDocument& doc) {
     if (_deviceConnected) {
         char buffer[1024];
         serializeJson(doc, buffer);
+        Serial.printf("[BLE SEND SYNC] %s\n", buffer);
         _pSyncChar->setValue(buffer);
         _pSyncChar->notify();
     }

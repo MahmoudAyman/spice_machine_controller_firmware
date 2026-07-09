@@ -95,10 +95,90 @@ void saveGlobalSpices() {
     file.close();
 }
 
+void loadRecipesCache() {
+    if (!LittleFS.exists("/recipes_cache.json")) {
+        Serial.println("[DB] No recipes cache found. Initializing default diagnostic recipe.");
+        activeRecipeCount = 1;
+        recipes[0].id = "def_1";
+        recipes[0].name = "Motion Test";
+        recipes[0].ingredientCount = 2;
+        recipes[0].ingredients[0].spiceName = "BLACK";
+        recipes[0].ingredients[0].quantityGrams = 1.0;
+        recipes[0].ingredients[1].spiceName = "BLUE";
+        recipes[0].ingredients[1].quantityGrams = 1.0;
+        return;
+    }
+
+    File file = LittleFS.open("/recipes_cache.json", "r");
+    if (!file) return;
+
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error) {
+        Serial.println("[DB] Failed to parse recipes_cache.json");
+        return;
+    }
+
+    JsonArray arr = doc["recipes"];
+    activeRecipeCount = 0;
+    for (JsonObject rObj : arr) {
+        if (activeRecipeCount >= MAX_RECIPES) break;
+        String fallbackId = "temp_" + String(activeRecipeCount);
+        recipes[activeRecipeCount].id = rObj["id"] | fallbackId;
+        recipes[activeRecipeCount].name = rObj["name"].as<String>();
+        
+        JsonArray ingArr = rObj["ingredients"];
+        recipes[activeRecipeCount].ingredientCount = 0;
+        for (JsonObject iObj : ingArr) {
+            if (recipes[activeRecipeCount].ingredientCount >= 10) break;
+            int idx = recipes[activeRecipeCount].ingredientCount;
+            recipes[activeRecipeCount].ingredients[idx].spiceName = iObj["name"] | "";
+            recipes[activeRecipeCount].ingredients[idx].quantityGrams = iObj["grams"].as<float>();
+            recipes[activeRecipeCount].ingredientCount++;
+        }
+        activeRecipeCount++;
+    }
+    Serial.printf("[DB] Loaded %d cached recipes from LittleFS.\n", activeRecipeCount);
+}
+
+void saveRecipesCache() {
+    File file = LittleFS.open("/recipes_cache.json", "w");
+    if (!file) {
+        Serial.println("[DB] Failed to open recipes_cache.json for writing");
+        return;
+    }
+
+    JsonDocument doc;
+    JsonArray arr = doc["recipes"].to<JsonArray>();
+    for (int i = 0; i < activeRecipeCount; i++) {
+        JsonObject obj = arr.add<JsonObject>();
+        obj["id"] = recipes[i].id;
+        obj["name"] = recipes[i].name;
+        JsonArray ingArr = obj["ingredients"].to<JsonArray>();
+        for (int j = 0; j < recipes[i].ingredientCount; j++) {
+            JsonObject ing = ingArr.add<JsonObject>();
+            ing["name"] = recipes[i].ingredients[j].spiceName;
+            ing["grams"] = recipes[i].ingredients[j].quantityGrams;
+        }
+    }
+
+    if (serializeJson(doc, file) == 0) {
+        Serial.println("[DB] Failed to serialize recipes cache");
+    } else {
+        Serial.println("[DB] Saved recipes cache to LittleFS");
+    }
+    file.close();
+}
+
 void factoryResetDatabase() {
     Serial.println("[DB] Executing Factory Reset...");
     if (LittleFS.exists("/global_spices.json")) {
         LittleFS.remove("/global_spices.json");
+    }
+    if (LittleFS.exists("/recipes_cache.json")) {
+        LittleFS.remove("/recipes_cache.json");
     }
     isMachineConfigured = false;
     Serial.println("[DB] Factory Reset complete. Rebooting...");
