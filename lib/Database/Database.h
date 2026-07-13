@@ -26,6 +26,7 @@ struct Recipe {
 
 // --- DATA DECLARATIONS ---
 extern const int NUM_SPICES;
+extern float max_fill;
 extern Spice spices[];
 extern Recipe recipes[MAX_RECIPES];
 extern int activeRecipeCount;

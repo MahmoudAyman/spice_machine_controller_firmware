@@ -75,7 +75,7 @@ void applyDispensedSpiceLevel(int completedCycles) {
         if (spices[pendingTargetTubeIndex].level < 0.0f) spices[pendingTargetTubeIndex].level = 0.0f;
         saveGlobalSpices();
         
-        float percentage = (spices[pendingTargetTubeIndex].level / MAX_SPICE_GRAMS) * 100.0f;
+        float percentage = (spices[pendingTargetTubeIndex].level / max_fill) * 100.0f;
         if (percentage < 15.0f) {
             bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1, false);
         }
@@ -109,6 +109,7 @@ void sendBleStatus() {
     
     switch (currentState) {
         case STATE_MAIN_MENU: 
+        case STATE_RECIPE_SELECT:
             stateStr = "idle"; 
             statusMsg = "Ready";
             detailMsg = "Awaiting command";
@@ -289,9 +290,13 @@ void loop() {
           Serial.read(); // Consume
           Serial.println("\n--- Registered Slots Configuration ---");
           for (int i = 0; i < TOTAL_TUBES; i++) {
-              Serial.printf("Slot %2d | Name: %-15s | Level: %3d%% | Raw Calibration: R:%3d, G:%3d, B:%3d\n",
+              int pct = (int)round((spices[i].level / max_fill) * 100.0f);
+              if (pct < 0) pct = 0;
+              if (pct > 100) pct = 100;
+              Serial.printf("Slot %2d | Name: %-15s | Level: %3d%% (%5.1fg) | Raw Calibration: R:%3d, G:%3d, B:%3d\n",
                             i + 1, 
                             spices[i].name.c_str(), 
+                            pct,
                             spices[i].level,
                             spices[i].r_val, 
                             spices[i].g_val, 
@@ -601,7 +606,7 @@ void loop() {
                   }
 
                   spices[currentTubeIndex].name = finalName;
-                  spices[currentTubeIndex].level = 100;
+                  spices[currentTubeIndex].level = max_fill;
                   spices[currentTubeIndex].expiry = 0; // Default to 0
 
                   Serial.printf("\n[SETUP] Slot %d successfully mapped to '%s'\n", currentTubeIndex + 1, finalName.c_str());
@@ -806,7 +811,7 @@ void loop() {
                    break;
                } else {
                    float requestedGrams = rItem.quantityGrams * servingsCount;
-                   float availableGrams = (spices[targetSlot].level / 100.0f) * MAX_SPICE_GRAMS;
+                   float availableGrams = spices[targetSlot].level;
                    if (requestedGrams > availableGrams) {
                        allIngredientsAvailable = false;
                        missingOrLowSpice = spices[targetSlot].name;
@@ -878,7 +883,7 @@ void loop() {
               
               // Calculate requested grams and verify loaded spice capacity
               float requestedGrams = targetDispenseCycles * GRAMS_PER_CYCLE;
-              float availableGrams = (spices[pendingTargetTubeIndex].level / 100.0f) * MAX_SPICE_GRAMS;
+              float availableGrams = spices[pendingTargetTubeIndex].level;
               
               if (requestedGrams > availableGrams) {
                   Serial.printf("[ERROR] Manual dispense rejected: Needs %.1fg but only %.1fg available in Slot %d '%s'.\n", 

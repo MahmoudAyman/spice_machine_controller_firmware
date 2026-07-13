@@ -154,7 +154,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             levels["type"] = "levels";
             JsonObject data = levels["data"].to<JsonObject>();
             for (int i = 0; i < NUM_SPICES; i++) {
-                int pct = (int)round((spices[i].level / MAX_SPICE_GRAMS) * 100.0f);
+                int pct = (int)round((spices[i].level / max_fill) * 100.0f);
                 if (pct < 0) pct = 0;
                 if (pct > 100) pct = 100;
                 data[String(i + 1)] = pct;
@@ -178,7 +178,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 itemDoc["s"] = i + 1;
                 itemDoc["n"] = spices[i].name;
                 
-                int pct = (int)round((spices[i].level / MAX_SPICE_GRAMS) * 100.0f);
+                int pct = (int)round((spices[i].level / max_fill) * 100.0f);
                 if (pct < 0) pct = 0;
                 if (pct > 100) pct = 100;
                 itemDoc["l"] = pct;
@@ -301,15 +301,16 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 }
                 
                 // Calculate available grams based on global physical slot capacity
-                float availableGrams = (spices[targetSlot].level / 100.0f) * MAX_SPICE_GRAMS;
+                float availableGrams = spices[targetSlot].level;
                 float requestedGrams = remoteRecipe.ingredients[i].quantityGrams;
                 
                 if (requestedGrams > availableGrams) {
                     allIngredientsValid = false;
                     invalidReason = "insufficient_spice";
                     invalidSpiceDetail = spices[targetSlot].name;
+                    int pct = (int)round((spices[targetSlot].level / max_fill) * 100.0f);
                     Serial.printf("[ERROR] BLE Dispense rejected: Ingredient '%s' needs %.1fg, only %.1fg available (Level: %d%%).\n",
-                                  spices[targetSlot].name.c_str(), requestedGrams, availableGrams, spices[targetSlot].level);
+                                  spices[targetSlot].name.c_str(), requestedGrams, availableGrams, pct);
                     break;
                 }
             }
@@ -515,8 +516,8 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             Serial.println("BLE: REFILL");
             int slot = doc["slot"];
             if (slot >= 1 && slot <= NUM_SPICES) {
-                Serial.printf("[DEBUG] Refilling slot %d to 100%% (%.1fg). Saving to GLOBAL profile.\n", slot, MAX_SPICE_GRAMS);
-                spices[slot - 1].level = MAX_SPICE_GRAMS;
+                Serial.printf("[DEBUG] Refilling slot %d to 100%% (%.1fg). Saving to GLOBAL profile.\n", slot, max_fill);
+                spices[slot - 1].level = max_fill;
                 
                 // Read optional expiry epoch timestamp for the newly refilled spice
                 if (doc["expiry"].is<uint32_t>()) {
@@ -544,7 +545,7 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
         else if (strcmp(type, "print_spices") == 0) {
             Serial.println("--- CURRENT SPICES DEBUG ---");
             for (int i = 0; i < NUM_SPICES; i++) {
-                int pct = (int)round((spices[i].level / MAX_SPICE_GRAMS) * 100.0f);
+                int pct = (int)round((spices[i].level / max_fill) * 100.0f);
                 if (pct < 0) pct = 0;
                 if (pct > 100) pct = 100;
                 Serial.printf("Slot %2d | Name: %-15s | Level: %3d%% (%5.1fg) | Raw Calibration: R:%3d, G:%3d, B:%3d\n",
@@ -562,6 +563,37 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             ack["command"] = "print_spices";
             ack["status"] = "success";
             notifyStatus(ack);
+        }
+        else if (strcmp(type, "set_max_fill") == 0) {
+            Serial.println("BLE: SET_MAX_FILL");
+            float new_max = doc["max_fill"];
+            if (new_max > 0.0f) {
+                float old_max = max_fill;
+                max_fill = new_max;
+                
+                // Recalculate fill level (preserving percentage) for each spice
+                for (int i = 0; i < NUM_SPICES; i++) {
+                    if (spices[i].level > 0.0f) {
+                        spices[i].level = (spices[i].level / old_max) * max_fill;
+                    }
+                }
+                
+                saveGlobalSpices();
+                
+                JsonDocument ack;
+                ack["type"] = "ack";
+                ack["command"] = "set_max_fill";
+                ack["status"] = "success";
+                ack["max_fill"] = max_fill;
+                notifyStatus(ack);
+            } else {
+                JsonDocument nak;
+                nak["type"] = "ack";
+                nak["command"] = "set_max_fill";
+                nak["status"] = "fail";
+                nak["reason"] = "invalid_value";
+                notifyStatus(nak);
+            }
         }
         else if (strcmp(type, "factory_reset") == 0) {
             Serial.println("BLE: FACTORY RESET");

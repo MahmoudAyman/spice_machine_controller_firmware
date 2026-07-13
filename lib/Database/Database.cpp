@@ -5,6 +5,7 @@
 const int NUM_SPICES = 20;
 int activeRecipeCount = 0;
 bool isMachineConfigured = false;
+float max_fill = 200.0f;
 
 // The working arrays in RAM
 Spice spices[NUM_SPICES];
@@ -31,6 +32,7 @@ void loadGlobalSpices() {
     if (!LittleFS.exists("/global_spices.json")) {
         Serial.println("No global spice config found. Machine unconfigured.");
         isMachineConfigured = false;
+        max_fill = 200.0f; // Default to 200g if unconfigured
         for (int i = 0; i < NUM_SPICES; i++) {
             spices[i].name = "";
             spices[i].level = 0.0f;
@@ -55,6 +57,7 @@ void loadGlobalSpices() {
     }
 
     isMachineConfigured = true;
+    max_fill = doc["max_fill"] | 200.0f; // Load max_fill, default to 200g
     JsonArray spicesArr = doc["spices"];
     int i = 0;
     for (JsonObject obj : spicesArr) {
@@ -78,6 +81,7 @@ void saveGlobalSpices() {
     }
 
     JsonDocument doc;
+    doc["max_fill"] = max_fill; // Save max_fill globally
     JsonArray spicesArr = doc["spices"].to<JsonArray>();
     for (int i = 0; i < NUM_SPICES; i++) {
         JsonObject obj = spicesArr.add<JsonObject>();
