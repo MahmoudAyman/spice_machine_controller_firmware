@@ -67,16 +67,16 @@ void applyDispensedSpiceLevel(int completedCycles);
 void applyDispensedSpiceLevel(int completedCycles) {
     if (pendingTargetTubeIndex >= 0 && pendingTargetTubeIndex < TOTAL_TUBES) {
         float actualDispensedGrams = completedCycles * GRAMS_PER_CYCLE;
-        float percentageReduction = (actualDispensedGrams / MAX_SPICE_GRAMS) * 100.0f;
         
-        Serial.printf("[DISPENSER] Level reduction: %d cycles -> %.2fg -> %.1f%% reduction on Slot %d '%s'\n",
-                      completedCycles, actualDispensedGrams, percentageReduction, pendingTargetTubeIndex + 1, spices[pendingTargetTubeIndex].name.c_str());
+        Serial.printf("[DISPENSER] Level reduction: %d cycles -> %.2fg reduction on Slot %d '%s' (Previous level: %.1fg)\n",
+                      completedCycles, actualDispensedGrams, pendingTargetTubeIndex + 1, spices[pendingTargetTubeIndex].name.c_str(), spices[pendingTargetTubeIndex].level);
                       
-        spices[pendingTargetTubeIndex].level -= (int)round(percentageReduction);
-        if (spices[pendingTargetTubeIndex].level < 0) spices[pendingTargetTubeIndex].level = 0;
+        spices[pendingTargetTubeIndex].level -= actualDispensedGrams;
+        if (spices[pendingTargetTubeIndex].level < 0.0f) spices[pendingTargetTubeIndex].level = 0.0f;
         saveGlobalSpices();
         
-        if (spices[pendingTargetTubeIndex].level < 15) {
+        float percentage = (spices[pendingTargetTubeIndex].level / MAX_SPICE_GRAMS) * 100.0f;
+        if (percentage < 15.0f) {
             bleManager.sendAlert("low_spice", pendingTargetTubeIndex + 1, false);
         }
     }

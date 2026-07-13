@@ -154,7 +154,10 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             levels["type"] = "levels";
             JsonObject data = levels["data"].to<JsonObject>();
             for (int i = 0; i < NUM_SPICES; i++) {
-                data[String(i + 1)] = spices[i].level;
+                int pct = (int)round((spices[i].level / MAX_SPICE_GRAMS) * 100.0f);
+                if (pct < 0) pct = 0;
+                if (pct > 100) pct = 100;
+                data[String(i + 1)] = pct;
             }
             notifyLevels(levels);
         }
@@ -174,7 +177,12 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
                 itemDoc["type"] = "manifest_item";
                 itemDoc["s"] = i + 1;
                 itemDoc["n"] = spices[i].name;
-                itemDoc["l"] = spices[i].level;
+                
+                int pct = (int)round((spices[i].level / MAX_SPICE_GRAMS) * 100.0f);
+                if (pct < 0) pct = 0;
+                if (pct > 100) pct = 100;
+                itemDoc["l"] = pct;
+                
                 itemDoc["e"] = spices[i].expiry;
                 notifyLevels(itemDoc);
                 delay(15); // Essential delay to let the BLE queue clear and transmit
@@ -498,8 +506,8 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             Serial.println("BLE: REFILL");
             int slot = doc["slot"];
             if (slot >= 1 && slot <= NUM_SPICES) {
-                Serial.printf("[DEBUG] Refilling slot %d to 100%%. Saving to GLOBAL profile.\n", slot);
-                spices[slot - 1].level = 100;
+                Serial.printf("[DEBUG] Refilling slot %d to 100%% (%.1fg). Saving to GLOBAL profile.\n", slot, MAX_SPICE_GRAMS);
+                spices[slot - 1].level = MAX_SPICE_GRAMS;
                 
                 // Read optional expiry epoch timestamp for the newly refilled spice
                 if (doc["expiry"].is<uint32_t>()) {
@@ -527,9 +535,13 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
         else if (strcmp(type, "print_spices") == 0) {
             Serial.println("--- CURRENT SPICES DEBUG ---");
             for (int i = 0; i < NUM_SPICES; i++) {
-                Serial.printf("Slot %2d | Name: %-15s | Level: %3d%% | Raw Calibration: R:%3d, G:%3d, B:%3d\n",
+                int pct = (int)round((spices[i].level / MAX_SPICE_GRAMS) * 100.0f);
+                if (pct < 0) pct = 0;
+                if (pct > 100) pct = 100;
+                Serial.printf("Slot %2d | Name: %-15s | Level: %3d%% (%5.1fg) | Raw Calibration: R:%3d, G:%3d, B:%3d\n",
                               i + 1, 
                               spices[i].name.c_str(), 
+                              pct,
                               spices[i].level,
                               spices[i].r_val, 
                               spices[i].g_val, 

@@ -33,7 +33,7 @@ void loadGlobalSpices() {
         isMachineConfigured = false;
         for (int i = 0; i < NUM_SPICES; i++) {
             spices[i].name = "";
-            spices[i].level = 0;
+            spices[i].level = 0.0f;
             spices[i].r_val = 0;
             spices[i].g_val = 0;
             spices[i].b_val = 0;
@@ -60,7 +60,7 @@ void loadGlobalSpices() {
     for (JsonObject obj : spicesArr) {
         if (i >= NUM_SPICES) break;
         spices[i].name = obj["name"] | "";
-        spices[i].level = obj["level"] | 0;
+        spices[i].level = obj["level"] | 0.0f;
         spices[i].r_val = obj["r_val"] | 0; 
         spices[i].g_val = obj["g_val"] | 0;
         spices[i].b_val = obj["b_val"] | 0;

@@ -8,7 +8,7 @@
 struct Spice {
   String name;
   int r_val, g_val, b_val;
-  int level; // Current fill level (0-100)
+  float level; // Current fill level in grams (0.0 to MAX_SPICE_GRAMS)
   uint32_t expiry; // Expiry epoch timestamp (0 if not set)
 };
 
