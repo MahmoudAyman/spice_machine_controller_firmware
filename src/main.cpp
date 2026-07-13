@@ -489,6 +489,15 @@ void loop() {
                                     (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100), 
                                     "Use Serial Mon", "");
               
+              // Notify BLE that machine is ready for the slot name input
+              JsonDocument readyMsg;
+              readyMsg["type"] = "setup_ready_for_slot";
+              readyMsg["slot"] = currentTubeIndex + 1;
+              readyMsg["r_val"] = spices[currentTubeIndex].r_val;
+              readyMsg["g_val"] = spices[currentTubeIndex].g_val;
+              readyMsg["b_val"] = spices[currentTubeIndex].b_val;
+              bleManager.notifyStatus(readyMsg);
+
               userInput = "";
               setupSubState = SETUP_AWAITING_NAME;
               break;
@@ -1087,7 +1096,7 @@ void startRecipeSearch() {
            Serial.printf("[RECIPE] Comparing Slot %d Raw (R:%d, G:%d, B:%d) to Database Slot %d '%s' Calibration (R:%d, G:%d, B:%d) | diff: %ld\n",
                          currentSlot + 1, rawR, rawG, rawB, targetSlot + 1, rItem.spiceName.c_str(), spices[targetSlot].r_val, spices[targetSlot].g_val, spices[targetSlot].b_val, diff);
 
-           if (diff <= 15) {
+           if (diff <= 20) {
                pendingTargetTubeIndex = currentSlot;
                currentIngredientIndex = i;
                currentRecipeGrams = rItem.quantityGrams * servingsCount;
