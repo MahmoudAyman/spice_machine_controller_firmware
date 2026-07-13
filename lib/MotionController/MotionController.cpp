@@ -11,6 +11,7 @@ AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, STEP_DIR_PIN);
 // --- Private Motion Controller State ---
 static RotationState currentRotState = ROT_IDLE;
 static BootAlignState currentBootState = BOOT_ALIGN_IDLE;
+static HomingState currentHomeState = HOME_IDLE;
 
 static int mcCurrentSlotIndex = 0;
 static int mcTargetSlotIndex = 0;
@@ -27,6 +28,7 @@ void initMotionController() {
     stepper.setPinsInverted(true, false, false);
     currentRotState = ROT_IDLE;
     currentBootState = BOOT_ALIGN_IDLE;
+    currentHomeState = HOME_IDLE;
     mcCurrentSlotIndex = 0;
     mcSlotsRemainingToMove = 0;
 }
@@ -216,7 +218,75 @@ bool tickBootRecovery(int &matchedSlotIndex) {
 }
 
 void startHoming() {
-    startRotationToSlot(0);
+    Serial.println("[MC] Starting Absolute Homing routine...");
+    enableStepperMotor();
+    currentHomeState = HOME_INIT;
+}
+
+bool tickHoming() {
+    switch (currentHomeState) {
+        case HOME_IDLE:
+            return true;
+            
+        case HOME_INIT: {
+            if (isHomingSwitchPressed()) {
+                Serial.println("[MC] Homing switch is already pressed. Moving off...");
+                currentHomeState = HOME_EXITING;
+            } else {
+                Serial.println("[MC] Homing switch is released. Searching fast...");
+                mcDebounceTimer = millis();
+                currentHomeState = HOME_ENTERING;
+            }
+            break;
+        }
+        
+        case HOME_EXITING: {
+            stepper.setSpeed(SEARCH_SPEED);
+            stepper.runSpeed();
+            if (!isHomingSwitchPressed()) {
+                Serial.println("[MC] Cleared homing switch. Initiating search...");
+                mcDebounceTimer = millis();
+                currentHomeState = HOME_ENTERING;
+            }
+            break;
+        }
+        
+        case HOME_ENTERING: {
+            stepper.setSpeed(SEARCH_SPEED);
+            stepper.runSpeed();
+            
+            if (!isHomingSwitchPressed()) {
+                mcDebounceTimer = millis();
+            }
+            
+            if (millis() - mcDebounceTimer >= 10) { // Pressed continuously for 10ms
+                Serial.println("[MC] Homing switch triggered! Aligning slowly...");
+                mcDebounceTimer = millis();
+                currentHomeState = HOME_ALIGNING;
+            }
+            break;
+        }
+        
+        case HOME_ALIGNING: {
+            stepper.setSpeed(SLOW_ALIGN_SPEED);
+            stepper.runSpeed();
+            
+            if (isHomingSwitchPressed()) {
+                mcDebounceTimer = millis();
+            }
+            
+            if (millis() - mcDebounceTimer >= 20) { // Released continuously for 20ms
+                stepper.stop();
+                Serial.println("[MC] Absolute Homing alignment complete! Index reset to Slot 1 (0).");
+                mcCurrentSlotIndex = 0; // Absolute home represents Slot 1
+                currentHomeState = HOME_IDLE;
+                disableStepperMotor();
+                return true; // Complete!
+            }
+            break;
+        }
+    }
+    return false;
 }
 
 RotationState getRotationState() { return currentRotState; }

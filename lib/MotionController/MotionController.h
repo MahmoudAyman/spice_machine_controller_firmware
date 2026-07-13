@@ -21,13 +21,22 @@ enum BootAlignState {
     BOOT_ALIGN_READ_AND_MATCH
 };
 
+enum HomingState {
+    HOME_IDLE,
+    HOME_INIT,
+    HOME_EXITING,   // Move off current position if already pressed
+    HOME_ENTERING,  // Move fast until homing switch triggers
+    HOME_ALIGNING   // Move slow until homing switch releases
+};
+
 // Core APIs
 void initMotionController();
 void startRotationToSlot(int targetSlotIndex);
 bool tickRotation(); // Returns true when target alignment is complete
 void startBootRecoveryAlignment();
 bool tickBootRecovery(int &matchedSlotIndex); // Returns true when start slot is found
-void startHoming();  // Sets target to Slot 0 and starts rotation
+void startHoming();  // Starts the homing process on the homing limit switch
+bool tickHoming();   // Processes homing state machine, returns true when absolute home alignment is complete
 
 // Status Getters and Setters
 RotationState getRotationState();

@@ -7,6 +7,7 @@
 
 void initHardware();
 bool isLimitSwitchPressed();
+bool isHomingSwitchPressed();
 String identifySpice(); // Blocking version
 void startIdentifySpice(); // Async version
 bool isIdentifying();

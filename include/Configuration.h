@@ -24,6 +24,9 @@
 // Limit Switch (Sensing structure alignment)
 #define LIMIT_SWITCH_PIN 36  // SENSOR_VP pin, pulled low externally, HIGH when pressed
 
+// Homing Limit Switch (Sensing absolute home position / Slot 1)
+#define HOMING_SWITCH_PIN 39 // SENSOR_VN pin, pulled low externally, HIGH when pressed
+
 // Discrete Buttons (Verified Hardware Mapping)
 #define BTN_UP        26 // BTN_4
 #define BTN_DOWN      14 // BTN_3

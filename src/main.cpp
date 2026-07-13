@@ -23,6 +23,7 @@ bool ingredientDispensed[10] = {false};
 int searchStepCount = 0;
 
 enum SetupState {
+    SETUP_HOMING,
     SETUP_INIT_TUBE,
     SETUP_ROTATE_EXITING,
     SETUP_ROTATE_ENTERING,
@@ -30,7 +31,7 @@ enum SetupState {
     SETUP_READ_COLOR,
     SETUP_AWAITING_NAME
 };
-SetupState setupSubState = SETUP_INIT_TUBE;
+SetupState setupSubState = SETUP_HOMING;
 unsigned long setupDebounceTimer = 0;
 
 int currentTubeIndex = 0;
@@ -371,29 +372,34 @@ void loop() {
 
   switch (currentState) {
     case STATE_BOOT: {
-      if (STATE_TIMEOUT(2000)) {
-          isRecipeMode = false; 
-          currentRecipeIndex = -1;
-          currentTubeIndex = 0;
-          pendingTargetTubeIndex = 0;
-          
-          if (!isMachineConfigured) {
-              Serial.println("[BOOT] Machine not configured. Entering Initial Setup...");
-              enableStepperMotor();
-              setupSubState = SETUP_INIT_TUBE;
-              userInput = "";
-              isInitialCheck = false;
-              lcd.showOperationView("INITIAL SETUP", "Welcome!", 0, "Initializing...", "");
-              changeState(STATE_INITIAL_SETUP);
-          } else {
-              startBootRecoveryAlignment();
+      static bool homingStarted = false;
+      if (!homingStarted) {
+          if (STATE_TIMEOUT(2000)) {
+              isRecipeMode = false; 
+              currentRecipeIndex = -1;
+              currentTubeIndex = 0;
+              pendingTargetTubeIndex = 0;
+              
+              if (!isMachineConfigured) {
+                  Serial.println("[BOOT] Machine not configured. Entering Initial Setup...");
+                  enableStepperMotor();
+                  setupSubState = SETUP_HOMING;
+                  startHoming(); // Start physical homing sequence
+                  userInput = "";
+                  isInitialCheck = false;
+                  lcd.showOperationView("HOMING", "Finding Home...", 0, "Calibrating", ""); // Draw once here to prevent continuous redraw slow-stepping
+                  changeState(STATE_INITIAL_SETUP);
+              } else {
+                  lcd.showOperationView("HOMING", "Finding Home...", 0, "Calibration", "");
+                  startHoming();
+                  homingStarted = true;
+              }
           }
-      } else if (isMachineConfigured && currentState == STATE_BOOT) {
-          int matchedSlot = 0;
-          if (tickBootRecovery(matchedSlot)) {
-              currentTubeIndex = matchedSlot;
-              pendingTargetTubeIndex = matchedSlot;
-              lcd.showOperationView("SYSTEM READY", spices[matchedSlot].name, 100, "Aligned & Ready", "");
+      } else {
+          if (tickHoming()) {
+              currentTubeIndex = 0;
+              pendingTargetTubeIndex = 0;
+              lcd.showOperationView("SYSTEM READY", spices[0].name, 100, "Aligned & Ready", "");
               delay(1000);
               
               isInitialCheck = false;
@@ -407,6 +413,14 @@ void loop() {
       const float SEARCH_SPEED = -250.0;
       
       switch (setupSubState) {
+          case SETUP_HOMING: {
+              if (tickHoming()) {
+                  currentTubeIndex = 0; // Ensure we start at Slot 1
+                  setupSubState = SETUP_READ_COLOR; // Go directly to read color for Slot 1 since we are already physically home and aligned!
+              }
+              break;
+          }
+
           case SETUP_INIT_TUBE: {
               Serial.printf("[SETUP] Starting Slot %d/20 positioning...\n", currentTubeIndex + 1);
               lcd.showOperationView("SETUP: SLOT " + String(currentTubeIndex + 1), 
@@ -611,6 +625,9 @@ void loop() {
 
                   Serial.printf("\n[SETUP] Slot %d successfully mapped to '%s'\n", currentTubeIndex + 1, finalName.c_str());
 
+                  // Keep MotionController's slot index in perfect sync during setup!
+                  setCurrentSlotIndex(currentTubeIndex);
+
                   // Notify BLE of successful mapping
                   JsonDocument ack;
                   ack["type"] = "ack";
@@ -664,17 +681,14 @@ void loop() {
         String detectedSpice = getIdentifiedSpice();
         String expectedSpice = spices[pendingTargetTubeIndex].name;
         
-        Serial.printf("[SENSOR] Expected: %s | Detected: %s\n", expectedSpice.c_str(), detectedSpice.c_str());
+        Serial.printf("[SENSOR] Expected Slot: %d (%s) | Redundant Color Detected: %s\n", 
+                      pendingTargetTubeIndex + 1, expectedSpice.c_str(), detectedSpice.c_str());
 
-        String dUpper = detectedSpice;
-        dUpper.toUpperCase();
-        String eUpper = expectedSpice;
-        eUpper.toUpperCase();
-
-        if (dUpper == eUpper || eUpper.indexOf(dUpper) != -1 || dUpper.indexOf(eUpper) != -1) {
+        // Perform matchmaking based on physical index tracking
+        if (getCurrentSlotIndex() == pendingTargetTubeIndex) {
            if (isInitialCheck) {
                // Surgical updates for boot
-               lcd.updateSpiceName(detectedSpice);
+               lcd.updateSpiceName(spices[pendingTargetTubeIndex].name);
                lcd.updateTask("VERIFIED");
                
                int nextProgress = (int)(((float)(currentTubeIndex + 1) / TOTAL_TUBES) * 100);
@@ -707,10 +721,10 @@ void loop() {
            }
         } else {
            if (isInitialCheck) {
-                lcd.updateContent("MISMATCH!", "Found: " + detectedSpice);
-                lcd.updateStatus("Expected: " + expectedSpice, ILI9341_RED);
+                lcd.updateContent("MISMATCH!", "Incorrect Index");
+                lcd.updateStatus("Expected Slot " + String(pendingTargetTubeIndex + 1), ILI9341_RED);
            } else {
-                lcd.showOperationView("MISMATCH!", "Found: " + detectedSpice, 0, "ERROR: WRONG SPICE", "Exit");
+                lcd.showOperationView("MISMATCH!", "Alignment Error", 0, "ERROR: ALIGNMENT ERR", "Exit");
            }
            bleManager.sendAlert("wrong_spice", pendingTargetTubeIndex + 1, true);
            if (STATE_TIMEOUT(3000)) {
@@ -720,7 +734,7 @@ void loop() {
         }
       } else if (!isInitialCheck) {
           lcd.updateTask("IDENTIFYING...");
-          lcd.updateDetail("Scanning Label");
+          lcd.updateDetail("Verifying Index");
       }
       break;
     }
@@ -1033,8 +1047,7 @@ void loop() {
                lcd.showOperationView("COMPLETE", "Recipe Finished", 100, "Enjoy!", "Back");
                delay(1500);
                isRecipeMode = false;
-               changeState(STATE_MAIN_MENU);
-               disableStepperMotor();
+               prepareReturnHome();
             }
           } else {
             // Send final 100% complete status packet for manual mode
@@ -1056,8 +1069,7 @@ void loop() {
     }
 
     case STATE_RETURNING_HOME: {
-      lcd.showOperationView("HOMING", "Moving to Slot 1", 50, "Clearing Area", "");
-      if (tickRotation()) {
+      if (tickHoming()) {
           currentTubeIndex = 0;
           disableStepperMotor();
           isRecipeMode = false;
@@ -1074,10 +1086,8 @@ void startRecipeSearch() {
    int currentSlot = getCurrentSlotIndex();
    Serial.printf("[RECIPE] Scanning Slot %d in search loop (Step %d/20)...\n", currentSlot + 1, searchStepCount + 1);
    
+   // Keep the color sensor readings as redundancy / logs (does not block or affect matching decision)
    long rawR = 0, rawG = 0, rawB = 0;
-   bool matchFound = false;
-   
-   // Read current slot color raw values
    for (int i = 0; i < 3; i++) {
        rawR += colorDetector.readRawColor('r'); delay(15);
        rawG += colorDetector.readRawColor('g'); delay(15);
@@ -1085,35 +1095,38 @@ void startRecipeSearch() {
    }
    rawR /= 3; rawG /= 3; rawB /= 3;
    
+   Serial.printf("[RECIPE] Redundant Color Reading on Slot %d: R:%ld, G:%ld, B:%ld (Calibrated R:%d, G:%d, B:%d)\n", 
+                 currentSlot + 1, rawR, rawG, rawB, spices[currentSlot].r_val, spices[currentSlot].g_val, spices[currentSlot].b_val);
+
+   String currentSpiceName = spices[currentSlot].name;
+   currentSpiceName.toUpperCase();
+   
    int totalIngredients = (currentRecipeIndex == -1 ? remoteRecipe.ingredientCount : recipes[currentRecipeIndex].ingredientCount);
+   bool matchFound = false;
+   
    for (int i = 0; i < totalIngredients; i++) {
        if (ingredientDispensed[i]) continue;
        
        RecipeItem rItem = (currentRecipeIndex == -1 ? remoteRecipe.ingredients[i] : recipes[currentRecipeIndex].ingredients[i]);
+       String targetSpiceName = rItem.spiceName;
+       targetSpiceName.toUpperCase();
        
-       // Search all database slots to see if our raw reading matches the calibrated slot holding this ingredient
-       int targetSlot = findSlotByName(rItem.spiceName);
-       if (targetSlot != -1) {
-           long diff = abs(spices[targetSlot].r_val - rawR) + 
-                       abs(spices[targetSlot].g_val - rawG) + 
-                       abs(spices[targetSlot].b_val - rawB);
+       // Confirm match if current slot name matches target ingredient name (handling substrings or exact matches)
+       if (currentSpiceName.length() > 0 && 
+           (currentSpiceName == targetSpiceName || 
+            currentSpiceName.indexOf(targetSpiceName) != -1 || 
+            targetSpiceName.indexOf(currentSpiceName) != -1)) {
            
-           Serial.printf("[RECIPE] Comparing Slot %d Raw (R:%d, G:%d, B:%d) to Database Slot %d '%s' Calibration (R:%d, G:%d, B:%d) | diff: %ld\n",
-                         currentSlot + 1, rawR, rawG, rawB, targetSlot + 1, rItem.spiceName.c_str(), spices[targetSlot].r_val, spices[targetSlot].g_val, spices[targetSlot].b_val, diff);
-
-           if (diff <= 20) {
-               pendingTargetTubeIndex = currentSlot;
-               currentIngredientIndex = i;
-               currentRecipeGrams = rItem.quantityGrams * servingsCount;
-               targetDispenseCycles = (int)(currentRecipeGrams / GRAMS_PER_CYCLE);
-               
-               Serial.printf("[RECIPE] MATCH CONFIRMED! Slot %d matches calibrated values for '%s' (diff: %ld)!\n", currentSlot + 1, rItem.spiceName.c_str(), diff);
-               matchFound = true;
-               changeState(STATE_CHECKING_FILL);
-               return;
-           } else {
-               Serial.printf("[RECIPE] Current Slot %d does not match '%s' calibration (diff: %ld)\n", currentSlot + 1, rItem.spiceName.c_str(), diff);
-           }
+           pendingTargetTubeIndex = currentSlot;
+           currentIngredientIndex = i;
+           currentRecipeGrams = rItem.quantityGrams * servingsCount;
+           targetDispenseCycles = (int)(currentRecipeGrams / GRAMS_PER_CYCLE);
+           
+           Serial.printf("[RECIPE] MATCH CONFIRMED (Index Tracking)! Slot %d holding '%s' matches recipe ingredient '%s'!\n", 
+                         currentSlot + 1, spices[currentSlot].name.c_str(), rItem.spiceName.c_str());
+           matchFound = true;
+           changeState(STATE_CHECKING_FILL);
+           return;
        }
    }
    

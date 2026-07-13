@@ -27,6 +27,7 @@ void initHardware() {
   Serial.println("Initializing Sensors...");
   colorDetector.begin();
   pinMode(LIMIT_SWITCH_PIN, INPUT);
+  pinMode(HOMING_SWITCH_PIN, INPUT);
   laserSensor.begin();
 
   // Buttons (Discrete Pins)
@@ -66,6 +67,10 @@ char getButtonKey() {
 
 bool isLimitSwitchPressed() {
     return digitalRead(LIMIT_SWITCH_PIN) == HIGH;
+}
+
+bool isHomingSwitchPressed() {
+    return digitalRead(HOMING_SWITCH_PIN) == HIGH;
 }
 
 String identifySpice() {
