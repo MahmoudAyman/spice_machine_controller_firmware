@@ -40,6 +40,16 @@ void LCDManager::clear() {
     _lastProgress = -1;
 }
 
+void LCDManager::clearViewCache() {
+    _lastView = "";
+    _lastLeft = "__NONE__";
+    _lastOk = "__NONE__";
+    _lastRight = "__NONE__";
+    _lastSelectedIndex = -1;
+    _lastHeaderTitle = "";
+    _lastStatus = "";
+}
+
 void LCDManager::setBacklight(bool on) {
     digitalWrite(TFT_LED, on ? HIGH : LOW);
 }

@@ -15,6 +15,7 @@ public:
 
     void begin();
     void clear();
+    void clearViewCache();
     
     // Core Views (Refactored)
     void showMenu(String title, const char* options[], int count, int selectedIndex, String leftLab = "", String okLab = "Select", String rightLab = "");

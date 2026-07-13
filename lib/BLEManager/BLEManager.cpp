@@ -439,6 +439,15 @@ void BLEManager::onWrite(BLECharacteristic* pCharacteristic) {
             Serial.println("BLE: SYNC_RECIPES_END");
             saveRecipesCache(); // Save cached recipes persistently
             
+            // If currently viewing the recipe select menu, reset draw state to force a refresh in the next loop iteration
+            if (currentState == STATE_RECIPE_SELECT) {
+                lastSelectionDrawn = -1;
+                lcd.clearViewCache(); // Clear the cached LCD view state to force full screen redraw
+                if (currentSelection >= activeRecipeCount) {
+                    currentSelection = activeRecipeCount > 0 ? activeRecipeCount - 1 : 0;
+                }
+            }
+            
             JsonDocument ack;
             ack["type"] = "ack";
             ack["command"] = "sync_recipes_end";

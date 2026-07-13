@@ -48,6 +48,7 @@ extern bool remoteRequestTriggered;
 extern Recipe remoteRecipe;
 extern int pendingTargetTubeIndex;
 extern int currentSelection; 
+extern int lastSelectionDrawn; 
 
 // --- App-Driven BLE Setup Globals ---
 extern String bleSetupNameReceived;
