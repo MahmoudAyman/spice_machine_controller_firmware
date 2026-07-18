@@ -25,9 +25,9 @@ void initHardware() {
 
   // Sensors
   Serial.println("Initializing Sensors...");
-  colorDetector.begin();
-  pinMode(LIMIT_SWITCH_PIN, INPUT);
-  pinMode(HOMING_SWITCH_PIN, INPUT);
+  // colorDetector.begin(); // Commented out
+  pinMode(LIMIT_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(HOMING_SWITCH_PIN, INPUT_PULLUP);
   laserSensor.begin();
 
   // Buttons (Discrete Pins)
@@ -74,30 +74,22 @@ bool isHomingSwitchPressed() {
 }
 
 String identifySpice() {
-  if (simulationEnabled) {
-      return spices[pendingTargetTubeIndex].name;
-  }
-  return colorDetector.identify(spices, NUM_SPICES, MATCH_THRESHOLD);
+  // Stubbed out: return the expected slot name directly
+  return spices[pendingTargetTubeIndex].name;
 }
 
 void startIdentifySpice() {
-    if (simulationEnabled) {
-        // No action needed for simulation
-    } else {
-        colorDetector.startIdentification(spices, NUM_SPICES, MATCH_THRESHOLD);
-    }
+  // Stubbed out
 }
 
 bool isIdentifying() {
-    if (simulationEnabled) return false; 
-    return colorDetector.isBusy();
+  // Stubbed out: complete instantly
+  return false;
 }
 
 String getIdentifiedSpice() {
-    if (simulationEnabled) {
-        return spices[pendingTargetTubeIndex].name;
-    }
-    return colorDetector.getResult();
+  // Stubbed out
+  return spices[pendingTargetTubeIndex].name;
 }
 
 void startDispense(int totalCycles) {

@@ -6,7 +6,6 @@
 #include <ESP32Servo.h>
 #include "Configuration.h"
 #include "Database.h"
-#include "../lib/ColorDetector/ColorDetector.h"
 #include "../lib/BLEManager/BLEManager.h"
 #include "../lib/LCDManager/LCDManager.h"
 #include "../lib/LaserLevelSensor/LaserLevelSensor.h"
@@ -35,7 +34,6 @@ enum SystemState {
 extern LCDManager lcd;
 extern AccelStepper stepper;
 extern Servo dispenserServo;
-extern ColorDetector colorDetector;
 extern BLEManager bleManager;
 extern LaserLevelSensor laserSensor;
 

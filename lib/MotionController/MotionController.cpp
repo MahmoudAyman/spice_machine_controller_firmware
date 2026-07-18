@@ -179,35 +179,10 @@ bool tickBootRecovery(int &matchedSlotIndex) {
         }
         
         case BOOT_ALIGN_READ_AND_MATCH: {
-            Serial.println("[MC] Centered. Reading color sensor to discover slot index...");
+            Serial.println("[MC] Centered. Bypassing color sensor discovery...");
             
-            long rawR = 0, rawG = 0, rawB = 0;
-            for (int i = 0; i < 3; i++) {
-                rawR += colorDetector.readRawColor('r'); delay(15);
-                rawG += colorDetector.readRawColor('g'); delay(15);
-                rawB += colorDetector.readRawColor('b'); delay(15);
-            }
-            rawR /= 3;
-            rawG /= 3;
-            rawB /= 3;
-            
-            int bestMatch = 0;
-            long smallestDiff = -1;
-            for (int s = 0; s < TOTAL_TUBES; s++) {
-                long diff = abs(spices[s].r_val - rawR) + 
-                            abs(spices[s].g_val - rawG) + 
-                            abs(spices[s].b_val - rawB);
-                if (smallestDiff == -1 || diff < smallestDiff) {
-                    smallestDiff = diff;
-                    bestMatch = s;
-                }
-            }
-            
-            mcCurrentSlotIndex = bestMatch;
-            matchedSlotIndex = bestMatch;
-            
-            Serial.printf("[MC] Boot recovery matched to Slot %d (%s) with diff %ld.\n", 
-                          bestMatch + 1, spices[bestMatch].name.c_str(), smallestDiff);
+            mcCurrentSlotIndex = 0;
+            matchedSlotIndex = 0;
             
             disableStepperMotor();
             currentBootState = BOOT_ALIGN_IDLE;

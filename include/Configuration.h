@@ -18,14 +18,14 @@
 
 // Stepper Motor (A4988/DRV8825)
 #define STEP_ENABLE_PIN -1   // CRITICAL: GPIO 19 is tied to ESP32 EN pin on PCB. MUST NOT BE USED.
-#define STEP_PIN        21
-#define STEP_DIR_PIN    22
+#define STEP_PIN        4
+#define STEP_DIR_PIN    2
 
 // Limit Switch (Sensing structure alignment)
-#define LIMIT_SWITCH_PIN 36  // SENSOR_VP pin, pulled low externally, HIGH when pressed
+#define LIMIT_SWITCH_PIN 16  // HIGH when pressed, LOW when released
 
 // Homing Limit Switch (Sensing absolute home position / Slot 1)
-#define HOMING_SWITCH_PIN 39 // SENSOR_VN pin, pulled low externally, HIGH when pressed
+#define HOMING_SWITCH_PIN 17 // LOW when released, LOW when released
 
 // Discrete Buttons (Verified Hardware Mapping)
 #define BTN_UP        26 // BTN_4
@@ -41,12 +41,6 @@
 #define BTN_4         26
 #define BTN_5         32
 
-// Color Sensor (TCS3200)
-#define CS_S0         17
-#define CS_S1         16
-#define CS_S2         2
-#define CS_S3         4
-#define CS_OUT        34
 
 // Other Peripherals
 #define LASER_RX_PIN  35 
@@ -65,16 +59,9 @@ const long WAIT_DURATION_FILLED = 5000;
 const long MATCH_THRESHOLD = 150; 
 
 // Dispensing Calibration
-const float MAX_SPICE_GRAMS = 150.0; // Physical capacity of each tube in grams
+const float MAX_SPICE_GRAMS = 200.0; // Physical capacity of each tube in grams
 const float GRAMS_PER_CYCLE = 0.2;
 const int CYCLES_PER_THEELEPEL = 10; 
 
-// Color Sensor Calibration (Legacy)
-const int WHITE_R = 25;
-const int WHITE_G = 30;
-const int WHITE_B = 22;
-const int BLACK_R = 250;
-const int BLACK_G = 300;
-const int BLACK_B = 280;
 
 #endif

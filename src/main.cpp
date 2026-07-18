@@ -11,7 +11,6 @@
 // --- Global Object Definitions ---
 LCDManager lcd;
 Servo dispenserServo;
-ColorDetector colorDetector = ColorDetector(CS_S0, CS_S1, CS_S2, CS_S3, CS_OUT);
 BLEManager bleManager;
 LaserLevelSensor laserSensor(LASER_RX_PIN);
 
@@ -260,9 +259,6 @@ void setup() {
 
   lcd.begin(); 
   
-  Serial.println("[INIT] Configuring Color Detector...");
-  colorDetector.setCalibration(WHITE_R, WHITE_G, WHITE_B, BLACK_R, BLACK_G, BLACK_B);
-  
   Serial.println("[INIT] Initializing BLE...");
   bleManager.begin("Spice Dispenser");
   
@@ -309,7 +305,6 @@ void loop() {
 
   // --- Asynchronous Ticks ---
   tickDispenser();
-  colorDetector.tick();
   bleManager.tick();
   
   // Safe Edge-Triggered BLE Status Update
@@ -453,7 +448,7 @@ void loop() {
               stepper.runSpeed();
               
               if (!isLimitSwitchPressed()) {
-                  setupDebounceTimer = millis(); // Reset timer if switch goes low
+                  setupDebounceTimer = millis(); // Reset timer if switch goes LOW (released)
               }
               
               if (millis() - setupDebounceTimer >= 10) { // Must be pressed continuously for 10ms
@@ -470,7 +465,7 @@ void loop() {
               stepper.runSpeed();
               
               if (isLimitSwitchPressed()) {
-                  setupDebounceTimer = millis(); // Reset timer if switch goes high
+                  setupDebounceTimer = millis(); // Reset timer if switch goes HIGH (pressed)
               }
               
               if (millis() - setupDebounceTimer >= 20) { // Must be released continuously for 20ms
@@ -482,23 +477,10 @@ void loop() {
           }
 
           case SETUP_READ_COLOR: {
-              Serial.printf("[SETUP] Reading sensor raw pulse widths for Slot %d/20...\n", currentTubeIndex + 1);
-              lcd.showOperationView("SETUP: SLOT " + String(currentTubeIndex + 1), 
-                                    "Calibrating...", 
-                                    (int)(((float)currentTubeIndex / TOTAL_TUBES) * 100), 
-                                    "Reading Sensor", "");
-              long sumR = 0, sumG = 0, sumB = 0;
-              for (int i = 0; i < 3; i++) {
-                  sumR += colorDetector.readRawColor('r'); delay(15);
-                  sumG += colorDetector.readRawColor('g'); delay(15);
-                  sumB += colorDetector.readRawColor('b'); delay(15);
-              }
-              spices[currentTubeIndex].r_val = sumR / 3;
-              spices[currentTubeIndex].g_val = sumG / 3;
-              spices[currentTubeIndex].b_val = sumB / 3;
-
-              Serial.printf("[SETUP] Slot %d raw pulse widths -> R: %d | G: %d | B: %d\n", 
-                  currentTubeIndex + 1, spices[currentTubeIndex].r_val, spices[currentTubeIndex].g_val, spices[currentTubeIndex].b_val);
+              Serial.printf("[SETUP] Bypassing color sensor reading for Slot %d/20...\n", currentTubeIndex + 1);
+              spices[currentTubeIndex].r_val = 0;
+              spices[currentTubeIndex].g_val = 0;
+              spices[currentTubeIndex].b_val = 0;
 
               Serial.printf("[SETUP] Enter name for Slot %d (Press Enter for default 'Spice_%d'):\n", 
                   currentTubeIndex + 1, currentTubeIndex + 1);
@@ -1086,18 +1068,6 @@ void startRecipeSearch() {
    int currentSlot = getCurrentSlotIndex();
    Serial.printf("[RECIPE] Scanning Slot %d in search loop (Step %d/20)...\n", currentSlot + 1, searchStepCount + 1);
    
-   // Keep the color sensor readings as redundancy / logs (does not block or affect matching decision)
-   long rawR = 0, rawG = 0, rawB = 0;
-   for (int i = 0; i < 3; i++) {
-       rawR += colorDetector.readRawColor('r'); delay(15);
-       rawG += colorDetector.readRawColor('g'); delay(15);
-       rawB += colorDetector.readRawColor('b'); delay(15);
-   }
-   rawR /= 3; rawG /= 3; rawB /= 3;
-   
-   Serial.printf("[RECIPE] Redundant Color Reading on Slot %d: R:%ld, G:%ld, B:%ld (Calibrated R:%d, G:%d, B:%d)\n", 
-                 currentSlot + 1, rawR, rawG, rawB, spices[currentSlot].r_val, spices[currentSlot].g_val, spices[currentSlot].b_val);
-
    String currentSpiceName = spices[currentSlot].name;
    currentSpiceName.toUpperCase();
    
@@ -1185,5 +1155,4 @@ int findSlotByName(String targetName) {
     }
     return -1;
 }
-
 
