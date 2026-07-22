@@ -26,7 +26,9 @@ enum HomingState {
     HOME_INIT,
     HOME_EXITING,   // Move off current position if already pressed
     HOME_ENTERING,  // Move fast until homing switch triggers
-    HOME_ALIGNING   // Move slow until homing switch releases
+    HOME_ALIGNING,  // Move slow until homing switch releases
+    HOME_ALIGN_NEXT_SLOT_ENTERING, // Move fast until alignment limit switch triggers
+    HOME_ALIGN_NEXT_SLOT_ALIGNING  // Move slow until alignment limit switch releases
 };
 
 // Core APIs

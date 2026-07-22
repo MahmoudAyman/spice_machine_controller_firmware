@@ -251,8 +251,40 @@ bool tickHoming() {
             }
             
             if (millis() - mcDebounceTimer >= 20) { // Released continuously for 20ms
+                Serial.println("[MC] Homing switch released. Moving to next slot alignment...");
+                mcDebounceTimer = millis();
+                currentHomeState = HOME_ALIGN_NEXT_SLOT_ENTERING;
+            }
+            break;
+        }
+
+        case HOME_ALIGN_NEXT_SLOT_ENTERING: {
+            stepper.setSpeed(SEARCH_SPEED);
+            stepper.runSpeed();
+            
+            if (!isLimitSwitchPressed()) {
+                mcDebounceTimer = millis();
+            }
+            
+            if (millis() - mcDebounceTimer >= 10) { // Pressed for 10ms
+                Serial.println("[MC] Next slot alignment switch triggered. Centering slowly...");
+                mcDebounceTimer = millis();
+                currentHomeState = HOME_ALIGN_NEXT_SLOT_ALIGNING;
+            }
+            break;
+        }
+
+        case HOME_ALIGN_NEXT_SLOT_ALIGNING: {
+            stepper.setSpeed(SLOW_ALIGN_SPEED);
+            stepper.runSpeed();
+            
+            if (isLimitSwitchPressed()) {
+                mcDebounceTimer = millis();
+            }
+            
+            if (millis() - mcDebounceTimer >= 20) { // Released continuously for 20ms
                 stepper.stop();
-                Serial.println("[MC] Absolute Homing alignment complete! Index reset to Slot 1 (0).");
+                Serial.println("[MC] Absolute Homing next-slot alignment complete! Index reset to Slot 1 (0).");
                 mcCurrentSlotIndex = 0; // Absolute home represents Slot 1
                 currentHomeState = HOME_IDLE;
                 disableStepperMotor();
