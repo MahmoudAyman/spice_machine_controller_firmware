@@ -2,6 +2,11 @@
 #include "Globals.h"
 #include "Configuration.h"
 
+// Define proper travel durations (160 deg travel needs ~350-400ms under load)
+const unsigned long FORWARD_SWEEP_TIME_MS  = 350; 
+const unsigned long BACKWARD_SWEEP_TIME_MS = 350; 
+const unsigned long VIBRATION_TIME_MS      = 150; 
+
 static DispenserState currentDispenserState = DISPENSER_IDLE;
 static int remainingCycles = 0;
 static unsigned long lastDispenserActionTime = 0;
@@ -17,9 +22,12 @@ void initServo() {
 void startDispense(int totalCycles) {
     if (totalCycles <= 0) return;
     remainingCycles = totalCycles;
-    currentDispenserState = DISPENSER_SWEEP_FORWARD;
-    servoPos = SERVO_START_OFFSET_ANGLE;
+    
+    // Command the move forward immediately
+    dispenserServo.write(SERVO_TARGET_DISPENSE_ANGLE);
     lastDispenserActionTime = millis();
+    currentDispenserState = DISPENSER_SWEEP_FORWARD;
+    
     Serial.printf("Starting non-blocking dispense: %d cycles from %d to %d\n", 
                   remainingCycles, SERVO_START_OFFSET_ANGLE, SERVO_TARGET_DISPENSE_ANGLE);
 }
@@ -32,55 +40,49 @@ void tickDispenser() {
             break;
 
         case DISPENSER_SWEEP_FORWARD:
-            // Sweep from 180 down to 20
-            if (now - lastDispenserActionTime >= 10) { 
-                servoPos -= 10;
-                if (servoPos < SERVO_TARGET_DISPENSE_ANGLE) {
-                    servoPos = SERVO_TARGET_DISPENSE_ANGLE;
+            // Wait for servo to physically complete the travel from 180 to 20 degrees
+            if (now - lastDispenserActionTime >= FORWARD_SWEEP_TIME_MS) {
+                // Command return sweep to start angle
+                dispenserServo.write(SERVO_START_OFFSET_ANGLE);
+                
+                if (VIBRATOR_PIN != -1) {
+                    digitalWrite(VIBRATOR_PIN, HIGH);
                 }
-                dispenserServo.write(servoPos);
+                
                 lastDispenserActionTime = now;
-                if (servoPos <= SERVO_TARGET_DISPENSE_ANGLE) {
-                    currentDispenserState = DISPENSER_SWEEP_BACKWARD;
-                }
+                currentDispenserState = DISPENSER_SWEEP_BACKWARD;
             }
             break;
 
         case DISPENSER_SWEEP_BACKWARD:
-            // Sweep from 20 back to 180
-            if (now - lastDispenserActionTime >= 10) {
-                servoPos += 10;
-                if (servoPos > SERVO_START_OFFSET_ANGLE) {
-                    servoPos = SERVO_START_OFFSET_ANGLE;
-                }
-                dispenserServo.write(servoPos);
+            // Wait for servo to physically travel from 20 back to 180 degrees
+            if (now - lastDispenserActionTime >= BACKWARD_SWEEP_TIME_MS) {
                 lastDispenserActionTime = now;
-                if (servoPos >= SERVO_START_OFFSET_ANGLE) {
-                    currentDispenserState = DISPENSER_VIBRATING;
-                    if (VIBRATOR_PIN != -1) {
-                        digitalWrite(VIBRATOR_PIN, HIGH);
-                    }
-                }
+                currentDispenserState = DISPENSER_VIBRATING;
             }
             break;
 
         case DISPENSER_VIBRATING:
-            if (now - lastDispenserActionTime >= 150) { 
+            // Allow vibrator extra settle time if needed
+            if (now - lastDispenserActionTime >= VIBRATION_TIME_MS) { 
                 if (VIBRATOR_PIN != -1) {
                     digitalWrite(VIBRATOR_PIN, LOW);
                 }
+                
                 remainingCycles--;
                 if (remainingCycles % 5 == 0 || remainingCycles < 5) {
                     Serial.printf("[DEBUG] Cycle complete. Remaining: %d\n", remainingCycles);
                 }
+                
                 if (remainingCycles > 0) {
+                    // Start next cycle
+                    dispenserServo.write(SERVO_TARGET_DISPENSE_ANGLE);
+                    lastDispenserActionTime = now;
                     currentDispenserState = DISPENSER_SWEEP_FORWARD;
-                    servoPos = SERVO_START_OFFSET_ANGLE;
                 } else {
                     currentDispenserState = DISPENSER_IDLE;
                     Serial.println("Dispensing complete.");
                 }
-                lastDispenserActionTime = now;
             }
             break;
     }
