@@ -7,6 +7,7 @@
 #include "Globals.h"
 #include "Hardware.h"
 #include "MotionController.h"
+#include "ServoController.h"
 
 // --- Global Object Definitions ---
 LCDManager lcd;
@@ -253,6 +254,9 @@ void setup() {
 
   Serial.println("[INIT] Initializing Hardware Drivers...");
   initHardware(); 
+
+  Serial.println("[INIT] Initializing Servo Controller...");
+  initServo();
   
   Serial.println("[INIT] Initializing Motion Controller...");
   initMotionController();
