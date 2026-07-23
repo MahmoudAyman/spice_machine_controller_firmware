@@ -58,7 +58,7 @@ bool isLimitSwitchPressed() {
 }
 
 bool isHomingSwitchPressed() {
-    return digitalRead(HOMING_SWITCH_PIN) == HIGH;
+    return digitalRead(HOMING_SWITCH_PIN) == LOW;
 }
 
 String identifySpice() {
