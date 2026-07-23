@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // --- System Configuration ---
-#define SIMULATION_MODE 1  // Set to 0 for actual hardware
+#define SIMULATION_MODE 0  // Set to 0 for actual hardware
 
 // --- Pin Definitions (Custom PCB V1.0) ---
 
@@ -25,7 +25,7 @@
 #define LIMIT_SWITCH_PIN 16  // HIGH when pressed, LOW when released
 
 // Homing Limit Switch (Sensing absolute home position / Slot 1)
-#define HOMING_SWITCH_PIN 17 // LOW when released, LOW when released
+#define HOMING_SWITCH_PIN 36 // HIGH when released, LOW when released
 
 // Discrete Buttons (Verified Hardware Mapping)
 #define BTN_UP        26 // BTN_4
@@ -44,7 +44,8 @@
 
 // Other Peripherals
 #define LASER_RX_PIN  35 
-#define LASER_FILLED_STATE LOW
+// #define LASER_FILLED_STATE LOW
+#define LASER_EN_PIN 17
 #define SERVO_PIN     15
 #define VIBRATOR_PIN  -1  // Currently unused/disabled
 

@@ -13,7 +13,7 @@
 LCDManager lcd;
 Servo dispenserServo;
 BLEManager bleManager;
-LaserLevelSensor laserSensor(LASER_RX_PIN);
+LaserLevelSensor laserSensor(LASER_RX_PIN, LASER_EN_PIN);
 
 // --- Logic Variables ---
 bool simulationEnabled = (SIMULATION_MODE == 1);
@@ -89,6 +89,10 @@ void changeState(SystemState newState) {
     stateStartTime = millis();
     lastSelectionDrawn = -1; // Reset tracker for UI redraws
     sendBleStatus(); 
+
+    if (newState == STATE_CHECKING_FILL) {
+        laserSensor.triggerRead();
+    }
 
     // Update Header on State Change
     String header = "Spice Mixer";
@@ -255,6 +259,9 @@ void setup() {
   Serial.println("[INIT] Initializing Hardware Drivers...");
   initHardware(); 
 
+  Serial.println("[INIT] Initializing Laser Sensor...");
+  laserSensor.begin();
+
   Serial.println("[INIT] Initializing Servo Controller...");
   initServo();
   
@@ -310,6 +317,7 @@ void loop() {
   // --- Asynchronous Ticks ---
   tickDispenser();
   bleManager.tick();
+  laserSensor.update();
   
   // Safe Edge-Triggered BLE Status Update
   static int lastBleStatus = -1;
@@ -942,7 +950,10 @@ void loop() {
           lcd.updateTask("VERIFYING LEVEL");
           lcd.updateDetail("Checking Sensor...");
       }
-      if (STATE_TIMEOUT(simulationEnabled ? 50 : 1000)) { 
+
+      bool isReady = simulationEnabled ? STATE_TIMEOUT(50) : !laserSensor.isBusy();
+
+      if (isReady) { 
           if (laserSensor.isFilled()) { 
             if (!isInitialCheck) {
                 lcd.updateTask("READY");
