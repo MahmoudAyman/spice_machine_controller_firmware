@@ -23,12 +23,14 @@ void startDispense(int totalCycles) {
     if (totalCycles <= 0) return;
     remainingCycles = totalCycles;
     
-    // Command the move forward immediately
-    dispenserServo.write(SERVO_TARGET_DISPENSE_ANGLE);
+    // Set initial position and state for incremental sweep
+    servoPos = SERVO_START_OFFSET_ANGLE;
+    dispenserServo.write(servoPos);
+    
     lastDispenserActionTime = millis();
     currentDispenserState = DISPENSER_SWEEP_FORWARD;
     
-    Serial.printf("Starting non-blocking dispense: %d cycles from %d to %d\n", 
+    Serial.printf("Starting non-blocking step dispense: %d cycles from %d to %d\n", 
                   remainingCycles, SERVO_START_OFFSET_ANGLE, SERVO_TARGET_DISPENSE_ANGLE);
 }
 
@@ -40,30 +42,54 @@ void tickDispenser() {
             break;
 
         case DISPENSER_SWEEP_FORWARD:
-            // Wait for servo to physically complete the travel from 180 to 20 degrees
-            if (now - lastDispenserActionTime >= FORWARD_SWEEP_TIME_MS) {
-                // Command return sweep to start angle
-                dispenserServo.write(SERVO_START_OFFSET_ANGLE);
-                
-                if (VIBRATOR_PIN != -1) {
-                    digitalWrite(VIBRATOR_PIN, HIGH);
+            // Move in steps of 5 degrees every 15 ms from 180 down to 20
+            if (now - lastDispenserActionTime >= 15) {
+                lastDispenserActionTime = now;
+                if (servoPos > SERVO_TARGET_DISPENSE_ANGLE) {
+                    servoPos -= 5;
+                    if (servoPos < SERVO_TARGET_DISPENSE_ANGLE) {
+                        servoPos = SERVO_TARGET_DISPENSE_ANGLE;
+                    }
+                    dispenserServo.write(servoPos);
                 }
                 
+                if (servoPos == SERVO_TARGET_DISPENSE_ANGLE) {
+                    currentDispenserState = DISPENSER_PAUSE_PEAK;
+                }
+            }
+            break;
+
+        case DISPENSER_PAUSE_PEAK:
+            // Pause at the peak target angle for 500 ms (matching test code)
+            if (now - lastDispenserActionTime >= 500) {
                 lastDispenserActionTime = now;
                 currentDispenserState = DISPENSER_SWEEP_BACKWARD;
             }
             break;
 
         case DISPENSER_SWEEP_BACKWARD:
-            // Wait for servo to physically travel from 20 back to 180 degrees
-            if (now - lastDispenserActionTime >= BACKWARD_SWEEP_TIME_MS) {
+            // Move in steps of 5 degrees every 15 ms from 20 back to 180
+            if (now - lastDispenserActionTime >= 15) {
                 lastDispenserActionTime = now;
-                currentDispenserState = DISPENSER_VIBRATING;
+                if (servoPos < SERVO_START_OFFSET_ANGLE) {
+                    servoPos += 5;
+                    if (servoPos > SERVO_START_OFFSET_ANGLE) {
+                        servoPos = SERVO_START_OFFSET_ANGLE;
+                    }
+                    dispenserServo.write(servoPos);
+                }
+                
+                if (servoPos == SERVO_START_OFFSET_ANGLE) {
+                    currentDispenserState = DISPENSER_VIBRATING;
+                    if (VIBRATOR_PIN != -1) {
+                        digitalWrite(VIBRATOR_PIN, HIGH);
+                    }
+                }
             }
             break;
 
         case DISPENSER_VIBRATING:
-            // Allow vibrator extra settle time if needed
+            // Settle vibration for 150 ms
             if (now - lastDispenserActionTime >= VIBRATION_TIME_MS) { 
                 if (VIBRATOR_PIN != -1) {
                     digitalWrite(VIBRATOR_PIN, LOW);
@@ -76,7 +102,7 @@ void tickDispenser() {
                 
                 if (remainingCycles > 0) {
                     // Start next cycle
-                    dispenserServo.write(SERVO_TARGET_DISPENSE_ANGLE);
+                    servoPos = SERVO_START_OFFSET_ANGLE;
                     lastDispenserActionTime = now;
                     currentDispenserState = DISPENSER_SWEEP_FORWARD;
                 } else {
